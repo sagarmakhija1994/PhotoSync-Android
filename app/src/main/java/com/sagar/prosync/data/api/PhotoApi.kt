@@ -33,6 +33,8 @@ data class RemotePhoto(
 
 data class PhotoListResponse(val photos: List<RemotePhoto>)
 
+data class DeletePhotosRequest(val photo_ids: List<Int>)
+
 interface PhotoApi {
 
     @POST("/photos/check-batch")
@@ -54,4 +56,7 @@ interface PhotoApi {
 
     @retrofit2.http.GET("/photos/list")
     suspend fun getPhotos(): PhotoListResponse
+
+    @retrofit2.http.POST("/photos/delete-batch")
+    suspend fun deletePhotos(@retrofit2.http.Body request: DeletePhotosRequest)
 }

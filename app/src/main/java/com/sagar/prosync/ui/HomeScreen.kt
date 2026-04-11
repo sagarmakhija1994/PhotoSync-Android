@@ -1,18 +1,27 @@
 package com.sagar.prosync.ui
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -22,51 +31,46 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.sagar.prosync.data.ApiClient
 import com.sagar.prosync.data.SessionStore
 import com.sagar.prosync.data.SettingsStore
+import com.sagar.prosync.data.api.DeletePhotosRequest
 import com.sagar.prosync.data.api.PhotoApi
 import com.sagar.prosync.data.api.RemotePhoto
 import com.sagar.prosync.sync.SyncWorker
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun HomeScreen(
-    onNavigateToSettings: () -> Unit
-) {
+fun HomeScreen(onNavigateToSettings: () -> Unit) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val settingsStore = remember { SettingsStore(context) }
     val sessionStore = remember { SessionStore(context) }
     val workManager = remember { WorkManager.getInstance(context) }
-
-    // API setup
     val api = remember { ApiClient.create(context).create(PhotoApi::class.java) }
 
-    // State for the gallery
     var photos by remember { mutableStateOf<List<RemotePhoto>>(emptyList()) }
     var isLoadingGallery by remember { mutableStateOf(true) }
-
-    // Observers to track the actual background job state
-    val workInfos by workManager.getWorkInfosForUniqueWorkLiveData("ManualPhotoSyncJob").observeAsState()
-
-    // Derived state: Is it currently running?
-    val isSyncing = workInfos?.any {
-        it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED
-    } == true
-
     var viewingPhotoId by remember { mutableStateOf<Int?>(null) }
 
-    // Fetch photos when the screen loads, or when a sync finishes!
-    LaunchedEffect(isSyncing) {
+    // --- NEW SELECTION STATE ---
+    val selectedPhotoIds = remember { mutableStateListOf<Int>() }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var refreshTrigger by remember { mutableIntStateOf(0) }
+
+    val workInfos by workManager.getWorkInfosForUniqueWorkLiveData("ManualPhotoSyncJob").observeAsState()
+    val isSyncing = workInfos?.any { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED } == true
+
+    LaunchedEffect(isSyncing, refreshTrigger) {
         if (!isSyncing) {
             try {
                 isLoadingGallery = true
-                val response = api.getPhotos()
-                photos = response.photos
+                photos = api.getPhotos().photos
             } catch (e: Exception) {
-                android.util.Log.e("HomeScreen", "Failed to fetch gallery", e)
+                e.printStackTrace()
             } finally {
                 isLoadingGallery = false
             }
@@ -75,21 +79,41 @@ fun HomeScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("PhotoSync") },
-                actions = {
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+            if (selectedPhotoIds.isNotEmpty()) {
+                // CONTEXTUAL ACTION BAR (Selection Mode)
+                TopAppBar(
+                    title = { Text("${selectedPhotoIds.size} Selected") },
+                    navigationIcon = {
+                        IconButton(onClick = { selectedPhotoIds.clear() }) {
+                            Icon(Icons.Default.Close, "Cancel Selection")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { showDeleteDialog = true }) {
+                            Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                )
+            } else {
+                // NORMAL TOP APP BAR
+                TopAppBar(
+                    title = { Text("PhotoSync") },
+                    actions = {
+                        IconButton(onClick = onNavigateToSettings) {
+                            Icon(Icons.Default.Settings, "Settings")
+                        }
                     }
-                }
-            )
+                )
+            }
         },
         bottomBar = {
+            // Your existing bottom bar... (omitted for brevity, keep your original bottom bar here)
             BottomAppBar(tonalElevation = 8.dp) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -105,49 +129,27 @@ fun HomeScreen(
                         )
                     }
 
-                    // The Manual Sync Icon Button
                     IconButton(
                         enabled = !isSyncing,
                         onClick = {
                             val syncRequest = OneTimeWorkRequestBuilder<SyncWorker>()
-                                .setInputData(workDataOf(
-                                    "SYNC_PHOTOS" to settingsStore.syncPhotos,
-                                    "SYNC_VIDEOS" to settingsStore.syncVideos
-                                ))
+                                .setInputData(workDataOf("SYNC_PHOTOS" to settingsStore.syncPhotos, "SYNC_VIDEOS" to settingsStore.syncVideos))
                                 .build()
-
-                            // Using enqueueUniqueWork allows us to observe it by name!
-                            workManager.enqueueUniqueWork(
-                                "ManualPhotoSyncJob",
-                                ExistingWorkPolicy.REPLACE,
-                                syncRequest
-                            )
+                            workManager.enqueueUniqueWork("ManualPhotoSyncJob", ExistingWorkPolicy.REPLACE, syncRequest)
                         }
                     ) {
-                        if (isSyncing) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(Icons.Default.Refresh, contentDescription = "Sync Now")
-                        }
+                        if (isSyncing) CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                        else Icon(Icons.Default.Refresh, "Sync Now")
                     }
                 }
             }
         }
     ) { padding ->
-        // --- THE NEW NATIVE GALLERY UI ---
-        Box(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
+        Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
             if (isLoadingGallery) {
                 CircularProgressIndicator()
             } else if (photos.isEmpty()) {
-                Text(
-                    text = "No photos uploaded yet.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Text("No photos uploaded yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
@@ -155,35 +157,92 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(photos) { photo ->
+                        val isSelected = selectedPhotoIds.contains(photo.id)
                         val token = sessionStore.getToken() ?: ""
-                        val imageUrl = "http://192.168.0.181:8000/photos/file/${photo.id}?thumbnail=true"
 
-                        // Coil 2.6.0 Image Request with your JWT Token
-                        val imageRequest = ImageRequest.Builder(context)
-                            .data(imageUrl)
-                            .addHeader("Authorization", "Bearer $token")
-                            .crossfade(true)
-                            .build()
-
-                        AsyncImage(
-                            model = imageRequest,
-                            contentDescription = "Photo from ${photo.device_name}",
+                        Box(
                             modifier = Modifier
                                 .aspectRatio(1f)
                                 .padding(1.dp)
-                                .clickable { viewingPhotoId = photo.id },
-                            contentScale = ContentScale.Crop
-                        )
+                                .combinedClickable(
+                                    onClick = {
+                                        if (selectedPhotoIds.isNotEmpty()) {
+                                            if (isSelected) selectedPhotoIds.remove(photo.id) else selectedPhotoIds.add(photo.id)
+                                        } else {
+                                            viewingPhotoId = photo.id
+                                        }
+                                    },
+                                    onLongClick = {
+                                        if (!isSelected) selectedPhotoIds.add(photo.id)
+                                    }
+                                )
+                        ) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data("http://192.168.0.181:8000/photos/file/${photo.id}?thumbnail=true")
+                                    .addHeader("Authorization", "Bearer $token")
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    // Make the image shrink slightly when selected, just like Google Photos!
+                                    .padding(if (isSelected) 8.dp else 0.dp)
+                                    .clip(if (isSelected) MaterialTheme.shapes.medium else MaterialTheme.shapes.extraSmall)
+                            )
+
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = "Selected",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .padding(4.dp)
+                                        .size(24.dp)
+                                        .align(Alignment.TopStart)
+                                        .background(Color.White, CircleShape)
+                                        .border(1.dp, Color.White, CircleShape)
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
     }
+
+    // --- OVERLAYS ---
     viewingPhotoId?.let { photoId ->
         PhotoViewerScreen(
             photoId = photoId,
             token = sessionStore.getToken() ?: "",
             onClose = { viewingPhotoId = null }
+        )
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete Photos") },
+            text = { Text("Are you sure you want to permanently delete these ${selectedPhotoIds.size} photos from the server? They will not be deleted from your phone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    coroutineScope.launch {
+                        try {
+                            api.deletePhotos(DeletePhotosRequest(selectedPhotoIds.toList()))
+                            selectedPhotoIds.clear()
+                            showDeleteDialog = false
+                            refreshTrigger++ // Force the gallery to reload!
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+            }
         )
     }
 }
