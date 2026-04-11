@@ -35,6 +35,18 @@ data class PhotoListResponse(val photos: List<RemotePhoto>)
 
 data class DeletePhotosRequest(val photo_ids: List<Int>)
 
+data class AlbumDto(val id: Int, val name: String, val owner_id: Int? = null)
+
+data class AlbumsResponse(val owned: List<AlbumDto>, val shared_with_me: List<AlbumDto>)
+
+data class CreateAlbumRequest(val name: String)
+
+data class CreateAlbumResponse(val status: String, val album_id: Int, val name: String)
+
+data class AddPhotosRequest(val photo_ids: List<Int>)
+
+data class AlbumDetailResponse(val id: Int, val name: String, val owner_id: Int, val photos: List<RemotePhoto>)
+
 interface PhotoApi {
 
     @POST("/photos/check-batch")
@@ -59,4 +71,19 @@ interface PhotoApi {
 
     @retrofit2.http.POST("/photos/delete-batch")
     suspend fun deletePhotos(@retrofit2.http.Body request: DeletePhotosRequest)
+
+    @retrofit2.http.GET("/albums/")
+    suspend fun getAlbums(): AlbumsResponse
+
+    @retrofit2.http.POST("/albums/create")
+    suspend fun createAlbum(@retrofit2.http.Body request: CreateAlbumRequest): CreateAlbumResponse
+
+    @retrofit2.http.POST("/albums/{album_id}/add-photos")
+    suspend fun addPhotosToAlbum(
+        @retrofit2.http.Path("album_id") albumId: Int,
+        @retrofit2.http.Body request: AddPhotosRequest
+    )
+
+    @retrofit2.http.GET("/albums/{album_id}")
+    suspend fun getAlbumDetails(@retrofit2.http.Path("album_id") albumId: Int): AlbumDetailResponse
 }
