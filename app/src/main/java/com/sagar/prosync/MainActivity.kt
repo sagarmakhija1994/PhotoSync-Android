@@ -4,17 +4,19 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import com.sagar.prosync.auth.LoginScreen
+import com.sagar.prosync.auth.RegisterScreen
 import com.sagar.prosync.data.SessionStore
+import com.sagar.prosync.data.SettingsStore
 import com.sagar.prosync.device.DeviceManager
-import com.sagar.prosync.navigation.AppNavGraph
-import com.sagar.prosync.navigation.Routes
+import com.sagar.prosync.ui.HomeScreen
+import com.sagar.prosync.ui.SettingsScreen
+import com.sagar.prosync.ui.SetupScreen
 import com.sagar.prosync.ui.theme.ProSyncTheme
 
 class MainActivity : ComponentActivity() {
@@ -24,29 +26,74 @@ class MainActivity : ComponentActivity() {
         // Ensure device ID exists early
         DeviceManager.getOrCreateDeviceId(this)
 
-        val sessionStore = SessionStore(this)
-        val startDestination =
-            if (sessionStore.getToken() == null) Routes.LOGIN else Routes.HOME
-
         setContent {
             ProSyncTheme {
-                AppNavGraph(startDestination = startDestination)
+                val context = LocalContext.current
+                val sessionStore = remember { SessionStore(context) }
+                val settingsStore = remember { SettingsStore(context) }
+
+                var currentScreen by remember {
+                    mutableStateOf(
+                        when {
+                            sessionStore.getToken().isNullOrEmpty() -> "LOGIN"
+                            !settingsStore.isSetupComplete -> "SETUP"
+                            else -> "HOME"
+                        }
+                    )
+                }
+
+                when (currentScreen) {
+                    "LOGIN" -> {
+                        LoginScreen(
+                            onLoginSuccess = {
+                                currentScreen = if (settingsStore.isSetupComplete) "HOME" else "SETUP"
+                            },
+                            onNavigateToRegister = {
+                                // Switch the screen to REGISTER
+                                currentScreen = "REGISTER"
+                            }
+                        )
+                    }
+
+                    "REGISTER" -> {
+                        // Assuming your RegisterScreen has similar callbacks
+                        RegisterScreen(
+                            onRegisterSuccess = {
+                                // Once registered, send them back to login (or directly to SETUP if your API auto-logs them in)
+                                currentScreen = "LOGIN"
+                            },
+                            onNavigateToLogin = {
+                                // If they click "Already have an account? Login"
+                                currentScreen = "LOGIN"
+                            }
+                        )
+                    }
+
+                    "SETUP" -> {
+                        SetupScreen(
+                            onFinishSetup = {
+                                currentScreen = "HOME"
+                            }
+                        )
+                    }
+
+                    "HOME" -> {
+                        HomeScreen(
+                            onNavigateToSettings = {
+                                currentScreen = "SETTINGS"
+                            }
+                        )
+                    }
+
+                    "SETTINGS" -> {
+                        SettingsScreen(
+                            onNavigateBack = {
+                                currentScreen = "HOME"
+                            }
+                        )
+                    }
+                }
             }
         }
-
-        /*Thread {
-            try {
-                val url = java.net.URL("http://192.168.0.181:8000/health")
-                val conn = url.openConnection() as java.net.HttpURLConnection
-                conn.connectTimeout = 5000
-                conn.readTimeout = 5000
-                conn.requestMethod = "GET"
-
-                val code = conn.responseCode
-                android.util.Log.d("NET_TEST", "Response code = $code")
-            } catch (e: Exception) {
-                android.util.Log.e("NET_TEST", "Network error", e)
-            }
-        }.start()*/
     }
 }

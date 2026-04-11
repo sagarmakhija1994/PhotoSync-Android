@@ -21,4 +21,9 @@ class SettingsStore(context: Context) {
     var autoSyncEnabled: Boolean
         get() = prefs.getBoolean("auto_sync_enabled", false)
         set(value) = prefs.edit().putBoolean("auto_sync_enabled", value).apply()
+
+    // --- NEW: Tracks if the user has completed the initial folder setup ---
+    var isSetupComplete: Boolean
+        get() = prefs.getBoolean("is_setup_complete", false) // Defaults to false for new installs
+        set(value) = prefs.edit().putBoolean("is_setup_complete", value).apply()
 }
