@@ -24,7 +24,8 @@ appcompat = "1.7.1"
 navigationCompose = "2.8.3"
 runtimeLivedata = "1.10.2"
 
-
+# --- coil ---
+coil = "2.6.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -54,9 +55,11 @@ androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx"
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
+# --- coil ---
+coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
 
-
-
+# --- Added libraries ---
+compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 androidx-compose-runtime-livedata = { group = "androidx.compose.runtime", name = "runtime-livedata", version.ref = "runtimeLivedata" }
 

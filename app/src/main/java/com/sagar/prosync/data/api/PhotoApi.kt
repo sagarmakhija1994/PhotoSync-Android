@@ -22,6 +22,17 @@ data class PhotoCheckRequest(
 data class PhotoCheckResponse(val exists: Boolean)
 data class UploadResponse(val status: String)
 
+data class RemotePhoto(
+    val id: Int,
+    val filename: String,
+    val device_name: String,
+    val media_type: String,
+    val file_size: Long,
+    val created_at: String
+)
+
+data class PhotoListResponse(val photos: List<RemotePhoto>)
+
 interface PhotoApi {
 
     @POST("/photos/check-batch")
@@ -40,4 +51,7 @@ interface PhotoApi {
         @Part("relative_path") relativePath: RequestBody,
         @Part("media_type") mediaType: RequestBody
     ): UploadResponse
+
+    @retrofit2.http.GET("/photos/list")
+    suspend fun getPhotos(): PhotoListResponse
 }
