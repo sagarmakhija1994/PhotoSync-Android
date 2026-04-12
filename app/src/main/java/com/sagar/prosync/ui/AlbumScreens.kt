@@ -26,7 +26,10 @@ import com.sagar.prosync.data.api.PhotoApi
 import kotlinx.coroutines.launch
 
 @Composable
-fun AlbumsTab(onAlbumClick: (Int) -> Unit) {
+fun AlbumsTab(
+    refreshTrigger: Int,
+    onAlbumClick: (Int) -> Unit,
+    onRefreshRequested: () -> Unit) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val api = remember { ApiClient.create(context).create(PhotoApi::class.java) }
@@ -37,7 +40,6 @@ fun AlbumsTab(onAlbumClick: (Int) -> Unit) {
     // Dialog State
     var showCreateDialog by remember { mutableStateOf(false) }
     var newAlbumName by remember { mutableStateOf("") }
-    var refreshTrigger by remember { mutableIntStateOf(0) }
 
     // Fetch Albums
     LaunchedEffect(refreshTrigger) {
@@ -131,7 +133,7 @@ fun AlbumsTab(onAlbumClick: (Int) -> Unit) {
                                     api.createAlbum(CreateAlbumRequest(newAlbumName))
                                     showCreateDialog = false
                                     newAlbumName = ""
-                                    refreshTrigger++ // Reload the list!
+                                    onRefreshRequested() // Reload the list!
                                 } catch (e: Exception) {
                                     e.printStackTrace()
                                 }

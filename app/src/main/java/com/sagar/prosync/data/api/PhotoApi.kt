@@ -57,6 +57,20 @@ data class ImportPhotoResponse(val status: String, val message: String?, val new
 
 data class UserDto(val id: Int, val username: String)
 
+data class RenameAlbumRequest(val name: String)
+
+data class RenameAlbumResponse(val status: String, val new_name: String)
+
+data class GenericMessageResponse(val status: String, val message: String)
+
+data class RemovePhotosRequest(val photo_ids: List<Int>)
+
+data class FollowResponse(val status: String, val message: String)
+
+data class ConnectionDto(val user_id: Int, val username: String)
+
+data class PendingRequestDto(val request_id: Int, val user_id: Int, val username: String)
+
 interface PhotoApi {
 
     @POST("/photos/check-batch")
@@ -113,4 +127,47 @@ interface PhotoApi {
 
     @retrofit2.http.GET("/albums/available-users")
     suspend fun searchUsers(@retrofit2.http.Query("q") query: String): List<UserDto>
+
+    @retrofit2.http.PUT("/albums/{album_id}/rename")
+    suspend fun renameAlbum(
+        @retrofit2.http.Path("album_id") albumId: Int,
+        @retrofit2.http.Body request: RenameAlbumRequest
+    ): RenameAlbumResponse
+
+    @retrofit2.http.DELETE("/albums/{album_id}")
+    suspend fun deleteAlbum(
+        @retrofit2.http.Path("album_id") albumId: Int,
+        @retrofit2.http.Query("delete_files") deleteFiles: Boolean
+    ): GenericMessageResponse
+
+    @retrofit2.http.GET("/albums/{album_id}/shares")
+    suspend fun getAlbumShares(@retrofit2.http.Path("album_id") albumId: Int): List<UserDto>
+
+    @retrofit2.http.DELETE("/albums/{album_id}/share/{target_user_id}")
+    suspend fun unshareAlbum(
+        @retrofit2.http.Path("album_id") albumId: Int,
+        @retrofit2.http.Path("target_user_id") targetUserId: Int
+    ): GenericMessageResponse
+
+    @retrofit2.http.POST("/albums/{album_id}/remove-photos")
+    suspend fun removePhotosFromAlbum(
+        @retrofit2.http.Path("album_id") albumId: Int,
+        @retrofit2.http.Body request: RemovePhotosRequest
+    ): GenericMessageResponse
+
+    // --- NETWORK & FOLLOW SYSTEM ---
+    @retrofit2.http.POST("/network/follow/{target_username}")
+    suspend fun sendFollowRequest(@retrofit2.http.Path("target_username") targetUsername: String): FollowResponse
+
+    @retrofit2.http.GET("/network/requests/pending")
+    suspend fun getPendingRequests(): List<PendingRequestDto>
+
+    @retrofit2.http.POST("/network/requests/{request_id}/{action}")
+    suspend fun resolveFollowRequest(
+        @retrofit2.http.Path("request_id") requestId: Int,
+        @retrofit2.http.Path("action") action: String // "accept" or "reject"
+    ): FollowResponse
+
+    @retrofit2.http.GET("/network/connections")
+    suspend fun getConnections(): List<ConnectionDto>
 }

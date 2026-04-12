@@ -26,4 +26,25 @@ class SettingsStore(context: Context) {
     var isSetupComplete: Boolean
         get() = prefs.getBoolean("is_setup_complete", false) // Defaults to false for new installs
         set(value) = prefs.edit().putBoolean("is_setup_complete", value).apply()
+
+    // --- NEW: Dynamic Grid Columns ---
+    var gridColumnsPortrait: Int
+        get() = prefs.getInt("grid_columns_portrait", 5)
+        set(value) = prefs.edit().putInt("grid_columns_portrait", value).apply()
+
+    var gridColumnsLandscape: Int
+        get() = prefs.getInt("grid_columns_landscape", 9)
+        set(value) = prefs.edit().putInt("grid_columns_landscape", value).apply()
+
+    var serverUrl: String
+        get() = prefs.getString("server_url", "") ?: ""
+        set(value) = prefs.edit().putString("server_url", value).apply()
+
+    var localServerUrl: String
+        get() = prefs.getString("local_server_url", "") ?: ""
+        set(value) = prefs.edit().putString("local_server_url", value).apply()
+
+    var useLocalServer: Boolean
+        get() = prefs.getBoolean("use_local_server", false)
+        set(value) = prefs.edit().putBoolean("use_local_server", value).apply()
 }

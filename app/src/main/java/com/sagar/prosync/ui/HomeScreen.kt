@@ -1,5 +1,9 @@
 package com.sagar.prosync.ui
 
+import android.content.Context
+import android.content.res.Configuration
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,8 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
@@ -59,14 +63,38 @@ fun HomeScreen(onNavigateToSettings: () -> Unit) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
 
-    // --- NEW: Add to Album Dialog State ---
     var showAddToAlbumDialog by remember { mutableStateOf(false) }
     var availableAlbums by remember { mutableStateOf<List<AlbumDto>>(emptyList()) }
     var isLoadingAlbums by remember { mutableStateOf(false) }
 
     var viewingAlbumId by remember { mutableStateOf<Int?>(null) }
-
     var viewingSharedAlbumId by remember { mutableStateOf<Int?>(null) }
+    var albumsListRefreshTrigger by remember { mutableIntStateOf(0) }
+
+    var showNetworkScreen by remember { mutableStateOf(false) }
+
+    val configuration = LocalConfiguration.current
+    val columns = if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+        settingsStore.gridColumnsLandscape
+    } else {
+        settingsStore.gridColumnsPortrait
+    }
+    val safeColumns = columns.coerceAtLeast(1)
+
+    // --- FIX: Dynamic URL with your 192.168.0.181 as the bulletproof default ---
+    val activeBaseUrl = remember(settingsStore.serverUrl, settingsStore.localServerUrl, settingsStore.useLocalServer) {
+        var url = settingsStore.serverUrl.ifBlank { "http://192.168.0.181:8000/" }
+
+        if (settingsStore.useLocalServer && settingsStore.localServerUrl.isNotBlank()) {
+            val connManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val isWifi = connManager.getNetworkCapabilities(connManager.activeNetwork)
+                ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+            if (isWifi) {
+                url = settingsStore.localServerUrl
+            }
+        }
+        if (!url.endsWith("/")) "$url/" else url
+    }
 
     val workInfos by workManager.getWorkInfosForUniqueWorkLiveData("ManualPhotoSyncJob").observeAsState()
     val isSyncing = workInfos?.any { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED } == true
@@ -93,7 +121,6 @@ fun HomeScreen(onNavigateToSettings: () -> Unit) {
                         IconButton(onClick = { selectedPhotoIds.clear() }) { Icon(Icons.Default.Close, "Cancel") }
                     },
                     actions = {
-                        // THE NEW ADD TO ALBUM BUTTON
                         IconButton(onClick = {
                             showAddToAlbumDialog = true
                             coroutineScope.launch {
@@ -113,35 +140,26 @@ fun HomeScreen(onNavigateToSettings: () -> Unit) {
             } else {
                 TopAppBar(
                     title = {
-                        Text(when(currentTab) {
-                            AppTab.PHOTOS -> "PhotoSync"
-                            AppTab.ALBUMS -> "My Albums"
-                            AppTab.SHARED -> "Shared Space"
-                        })
+                        // --- UI FIX: Title and Status Stacked! ---
+                        Column {
+                            Text(when(currentTab) {
+                                AppTab.PHOTOS -> "PhotoSync"
+                                AppTab.ALBUMS -> "My Albums"
+                                AppTab.SHARED -> "Shared Space"
+                            })
+                            if (currentTab == AppTab.PHOTOS) {
+                                val statusText = if (isSyncing) "Syncing now..." else if (settingsStore.autoSyncEnabled) "Auto-Sync: ON" else "Auto-Sync: OFF"
+                                Text(
+                                    text = statusText,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (isSyncing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     },
                     actions = {
-                        IconButton(onClick = onNavigateToSettings) { Icon(Icons.Default.Settings, "Settings") }
-                    }
-                )
-            }
-        },
-        bottomBar = {
-            Column {
-                if (currentTab == AppTab.PHOTOS) {
-                    Surface(tonalElevation = 8.dp) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text(
-                                    text = if (settingsStore.autoSyncEnabled) "Auto-Sync is ON" else "Auto-Sync is OFF",
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (settingsStore.autoSyncEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(text = if (isSyncing) "Syncing now..." else "Ready", style = MaterialTheme.typography.bodySmall)
-                            }
+                        // --- UI FIX: Sync Button moved next to Network! ---
+                        if (currentTab == AppTab.PHOTOS) {
                             IconButton(
                                 enabled = !isSyncing,
                                 onClick = {
@@ -151,33 +169,44 @@ fun HomeScreen(onNavigateToSettings: () -> Unit) {
                                     workManager.enqueueUniqueWork("ManualPhotoSyncJob", ExistingWorkPolicy.REPLACE, syncRequest)
                                 }
                             ) {
-                                if (isSyncing) CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                                else Icon(Icons.Default.Refresh, "Sync Now")
+                                if (isSyncing) {
+                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Icon(Icons.Default.Refresh, "Sync Now", tint = MaterialTheme.colorScheme.primary)
+                                }
                             }
                         }
-                    }
-                }
 
-                NavigationBar {
-                    NavigationBarItem(
-                        icon = { Icon(Icons.Default.Photo, "Photos") },
-                        label = { Text("Photos") },
-                        selected = currentTab == AppTab.PHOTOS,
-                        onClick = { currentTab = AppTab.PHOTOS }
-                    )
-                    NavigationBarItem(
-                        icon = { Icon(Icons.Default.PhotoLibrary, "Albums") },
-                        label = { Text("Albums") },
-                        selected = currentTab == AppTab.ALBUMS,
-                        onClick = { currentTab = AppTab.ALBUMS }
-                    )
-                    NavigationBarItem(
-                        icon = { Icon(Icons.Default.People, "Shared") },
-                        label = { Text("Shared") },
-                        selected = currentTab == AppTab.SHARED,
-                        onClick = { currentTab = AppTab.SHARED }
-                    )
-                }
+                        IconButton(onClick = { showNetworkScreen = true }) {
+                            Icon(Icons.Default.People, "My Network")
+                        }
+                        IconButton(onClick = onNavigateToSettings) {
+                            Icon(Icons.Default.Settings, "Settings")
+                        }
+                    }
+                )
+            }
+        },
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.Photo, "Photos") },
+                    label = { Text("Photos") },
+                    selected = currentTab == AppTab.PHOTOS,
+                    onClick = { currentTab = AppTab.PHOTOS }
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.PhotoLibrary, "Albums") },
+                    label = { Text("Albums") },
+                    selected = currentTab == AppTab.ALBUMS,
+                    onClick = { currentTab = AppTab.ALBUMS }
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.People, "Shared") },
+                    label = { Text("Shared") },
+                    selected = currentTab == AppTab.SHARED,
+                    onClick = { currentTab = AppTab.SHARED }
+                )
             }
         }
     ) { padding ->
@@ -190,7 +219,7 @@ fun HomeScreen(onNavigateToSettings: () -> Unit) {
                         Text("No photos uploaded yet.", modifier = Modifier.align(Alignment.Center))
                     } else {
                         LazyVerticalGrid(
-                            columns = GridCells.Fixed(3),
+                            columns = GridCells.Fixed(safeColumns),
                             contentPadding = PaddingValues(2.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
@@ -206,18 +235,14 @@ fun HomeScreen(onNavigateToSettings: () -> Unit) {
                                             onClick = {
                                                 if (selectedPhotoIds.isNotEmpty()) {
                                                     if (isSelected) selectedPhotoIds.remove(photo.id) else selectedPhotoIds.add(photo.id)
-                                                } else {
-                                                    viewingPhotoId = photo.id
-                                                }
+                                                } else { viewingPhotoId = photo.id }
                                             },
-                                            onLongClick = {
-                                                if (!isSelected) selectedPhotoIds.add(photo.id)
-                                            }
+                                            onLongClick = { if (!isSelected) selectedPhotoIds.add(photo.id) }
                                         )
                                 ) {
                                     AsyncImage(
                                         model = ImageRequest.Builder(context)
-                                            .data("http://192.168.0.181:8000/photos/file/${photo.id}?thumbnail=true")
+                                            .data("${activeBaseUrl}photos/file/${photo.id}?thumbnail=true")
                                             .addHeader("Authorization", "Bearer $token")
                                             .crossfade(true)
                                             .build(),
@@ -243,7 +268,11 @@ fun HomeScreen(onNavigateToSettings: () -> Unit) {
                         }
                     }
                 }
-                AppTab.ALBUMS -> AlbumsTab(onAlbumClick = { viewingAlbumId = it })
+                AppTab.ALBUMS -> AlbumsTab(
+                    refreshTrigger = albumsListRefreshTrigger,
+                    onAlbumClick = { viewingAlbumId = it },
+                    onRefreshRequested = { albumsListRefreshTrigger++ }
+                )
                 AppTab.SHARED -> SharedTab(onAlbumClick = { viewingSharedAlbumId = it })
             }
         }
@@ -258,15 +287,16 @@ fun HomeScreen(onNavigateToSettings: () -> Unit) {
         )
     }
 
-    // --- ALBUM DETAIL OVERLAY ---
     viewingAlbumId?.let { albumId ->
         AlbumDetailScreen(
             albumId = albumId,
-            onClose = { viewingAlbumId = null }
+            onClose = {
+                viewingAlbumId = null
+                albumsListRefreshTrigger++
+            }
         )
     }
 
-    // --- SHARED ALBUM DETAIL OVERLAY ---
     viewingSharedAlbumId?.let { albumId ->
         SharedAlbumDetailScreen(
             albumId = albumId,
@@ -274,7 +304,10 @@ fun HomeScreen(onNavigateToSettings: () -> Unit) {
         )
     }
 
-    // 1. Add to Album Dialog Overlay
+    if (showNetworkScreen) {
+        NetworkScreen(onNavigateBack = { showNetworkScreen = false })
+    }
+
     if (showAddToAlbumDialog) {
         AlertDialog(
             onDismissRequest = { showAddToAlbumDialog = false },
@@ -310,7 +343,6 @@ fun HomeScreen(onNavigateToSettings: () -> Unit) {
         )
     }
 
-    // 2. Delete Dialog Overlay
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },

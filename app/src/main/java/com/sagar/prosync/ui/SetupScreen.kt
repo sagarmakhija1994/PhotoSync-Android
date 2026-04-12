@@ -1,6 +1,10 @@
 package com.sagar.prosync.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -15,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.sagar.prosync.data.SettingsStore
 import com.sagar.prosync.sync.FolderPicker
 import com.sagar.prosync.sync.FolderStore
@@ -28,16 +33,40 @@ fun SetupScreen(
     val folderStore = remember { FolderStore(context) }
     val settingsStore = remember { SettingsStore(context) }
 
-    // Uses your getAll() method!
     var selectedFolders by remember { mutableStateOf(folderStore.getAll().toList()) }
+
+    // --- 1. DEFINE REQUIRED PERMISSIONS BASED ON ANDROID VERSION ---
+    val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
+    } else {
+        arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+    }
+
+    // --- 2. PERMISSION LAUNCHER ---
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.entries.all { it.value }
+        if (!allGranted) {
+            Toast.makeText(context, "Storage permissions are required to backup photos.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // --- 3. ASK ON LAUNCH ---
+    LaunchedEffect(Unit) {
+        val hasPermissions = requiredPermissions.all {
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+        }
+        if (!hasPermissions) {
+            permissionLauncher.launch(requiredPermissions)
+        }
+    }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         val uri = result.data?.data ?: return@rememberLauncherForActivityResult
         FolderPicker.persistPermission(context, uri)
-
-        // Uses your save() method!
         folderStore.save(uri)
         selectedFolders = folderStore.getAll().toList()
     }
@@ -83,7 +112,6 @@ fun SetupScreen(
                             Text(displayName, style = MaterialTheme.typography.bodyLarge)
                         }
                         IconButton(onClick = {
-                            // Uses your remove() method!
                             folderStore.remove(uri)
                             selectedFolders = folderStore.getAll().toList()
                         }) {
@@ -98,8 +126,18 @@ fun SetupScreen(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = selectedFolders.isNotEmpty(),
                 onClick = {
-                    settingsStore.isSetupComplete = true
-                    onFinishSetup()
+                    // --- 4. VERIFY ON FINISH ---
+                    val isGranted = requiredPermissions.all {
+                        ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+                    }
+
+                    if (isGranted) {
+                        settingsStore.isSetupComplete = true
+                        onFinishSetup()
+                    } else {
+                        Toast.makeText(context, "Please grant media permissions first!", Toast.LENGTH_SHORT).show()
+                        permissionLauncher.launch(requiredPermissions)
+                    }
                 }
             ) {
                 Text("Finish Setup")

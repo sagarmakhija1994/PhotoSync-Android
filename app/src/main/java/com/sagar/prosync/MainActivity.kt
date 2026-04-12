@@ -15,6 +15,7 @@ import com.sagar.prosync.data.SessionStore
 import com.sagar.prosync.data.SettingsStore
 import com.sagar.prosync.device.DeviceManager
 import com.sagar.prosync.ui.HomeScreen
+import com.sagar.prosync.ui.ServerConfigScreen
 import com.sagar.prosync.ui.SettingsScreen
 import com.sagar.prosync.ui.SetupScreen
 import com.sagar.prosync.ui.theme.ProSyncTheme
@@ -32,9 +33,11 @@ class MainActivity : ComponentActivity() {
                 val sessionStore = remember { SessionStore(context) }
                 val settingsStore = remember { SettingsStore(context) }
 
+                // --- FIX: Injected Server Config check into the launch logic ---
                 var currentScreen by remember {
                     mutableStateOf(
                         when {
+                            settingsStore.serverUrl.isBlank() -> "SERVER_CONFIG"
                             sessionStore.getToken().isNullOrEmpty() -> "LOGIN"
                             !settingsStore.isSetupComplete -> "SETUP"
                             else -> "HOME"
@@ -43,6 +46,16 @@ class MainActivity : ComponentActivity() {
                 }
 
                 when (currentScreen) {
+                    // --- NEW: Route for Server Configuration ---
+                    "SERVER_CONFIG" -> {
+                        ServerConfigScreen(
+                            onConfigSaved = {
+                                // Once they enter the URL, send them to log in
+                                currentScreen = "LOGIN"
+                            }
+                        )
+                    }
+
                     "LOGIN" -> {
                         LoginScreen(
                             onLoginSuccess = {

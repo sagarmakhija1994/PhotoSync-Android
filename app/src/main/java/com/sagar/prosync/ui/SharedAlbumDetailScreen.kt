@@ -1,15 +1,19 @@
 package com.sagar.prosync.ui
 
+import android.content.res.Configuration
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -21,6 +25,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.DriveFileMove
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -43,12 +48,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.sagar.prosync.data.ApiClient
 import com.sagar.prosync.data.SessionStore
+import com.sagar.prosync.data.SettingsStore
 import com.sagar.prosync.data.api.AlbumDetailResponse
 import com.sagar.prosync.data.api.ImportPhotoRequest
 import com.sagar.prosync.data.api.PhotoApi
@@ -74,6 +81,14 @@ fun SharedAlbumDetailScreen(
     val selectedPhotoIds = remember { mutableStateListOf<Int>() }
     var isImporting by remember { mutableStateOf(false) }
 
+    val configuration = LocalConfiguration.current
+    val settingsStore = remember { SettingsStore(context) }
+    val columns = if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+        settingsStore.gridColumnsLandscape
+    } else {
+        settingsStore.gridColumnsPortrait
+    }
+
     LaunchedEffect(albumId) {
         try {
             albumDetails = api.getAlbumDetails(albumId)
@@ -84,25 +99,14 @@ fun SharedAlbumDetailScreen(
     Scaffold(
         topBar = {
             if (selectedPhotoIds.isNotEmpty()) {
+                // --- MULTI-SELECTION MODE ---
                 TopAppBar(
                     title = { Text("${selectedPhotoIds.size} Selected") },
                     navigationIcon = {
                         IconButton(onClick = { selectedPhotoIds.clear() }) { Icon(Icons.Default.Close, "Cancel") }
                     },
                     actions = {
-                        IconButton(onClick = {
-                            coroutineScope.launch {
-                                try {
-                                    api.importEntireAlbum(albumId)
-                                    Toast.makeText(context, "Album & photos cloned to your space!", Toast.LENGTH_LONG).show()
-                                    onClose() // Go back to shared list
-                                } catch (e: Exception) { e.printStackTrace() }
-                            }
-                        }) {
-                            Icon(Icons.Default.DriveFileMove, "Clone Album to My Space")
-                        }
-
-                        // NEW: SELECT ALL BUTTON
+                        // Select All Button
                         IconButton(onClick = {
                             albumDetails?.photos?.let { photos ->
                                 selectedPhotoIds.clear()
@@ -112,7 +116,7 @@ fun SharedAlbumDetailScreen(
                             Icon(Icons.Default.DoneAll, "Select All")
                         }
 
-                        // THE MAGIC IMPORT BUTTON
+                        // Import Selected Photos Button
                         IconButton(onClick = {
                             coroutineScope.launch {
                                 isImporting = true
@@ -124,23 +128,36 @@ fun SharedAlbumDetailScreen(
                                     } catch (e: Exception) { e.printStackTrace() }
                                 }
                                 isImporting = false
-                                android.widget.Toast.makeText(context, "Imported $successCount photos to your hard drive!", android.widget.Toast.LENGTH_LONG).show()
+                                android.widget.Toast.makeText(context, "Imported $successCount photos!", android.widget.Toast.LENGTH_LONG).show()
                                 selectedPhotoIds.clear()
                             }
                         }) {
-                            if (isImporting) {
-                                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.primary)
-                            } else {
-                                Icon(Icons.Default.CloudDownload, "Import to My Space", tint = MaterialTheme.colorScheme.primary)
-                            }
+                            Icon(Icons.Default.CloudDownload, "Import to My Space", tint = MaterialTheme.colorScheme.primary)
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 )
             } else {
+                // --- NORMAL MODE (Nothing Selected) ---
                 TopAppBar(
                     title = { Text(albumDetails?.name ?: "Shared Album") },
-                    navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, "Back") } }
+                    navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, "Back") } },
+                    actions = {
+                        // CLONE ENTIRE ALBUM BUTTON
+                        IconButton(onClick = {
+                            coroutineScope.launch {
+                                isImporting = true // This locks the screen!
+                                try {
+                                    api.importEntireAlbum(albumId)
+                                    android.widget.Toast.makeText(context, "Album & photos cloned to your space!", android.widget.Toast.LENGTH_LONG).show()
+                                    onClose()
+                                } catch (e: Exception) { e.printStackTrace() }
+                                finally { isImporting = false }
+                            }
+                        }) {
+                            Icon(Icons.Default.DriveFileMove, "Clone Album to My Space", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
                 )
             }
         }
@@ -150,7 +167,7 @@ fun SharedAlbumDetailScreen(
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             } else {
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
+                    columns = GridCells.Fixed(columns),
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(albumDetails?.photos ?: emptyList()) { photo ->
@@ -200,5 +217,18 @@ fun SharedAlbumDetailScreen(
     // Photo Viewer Overlay
     viewingPhotoId?.let { photoId ->
         PhotoViewerScreen(photoId = photoId, token = token, onClose = { viewingPhotoId = null })
+    }
+
+    // PROCESSING OVERLAY (Blocks UI interactions!)
+    if (isImporting) {
+        Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)), contentAlignment = Alignment.Center) {
+            Card(modifier = Modifier.padding(16.dp)) {
+                Row(modifier = Modifier.padding(24.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator()
+                    Spacer(Modifier.width(16.dp))
+                    Text("Importing files...", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        }
     }
 }
