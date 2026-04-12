@@ -1,6 +1,9 @@
 package com.sagar.prosync.ui
 
+import android.content.Context
 import android.content.res.Configuration
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -87,6 +90,20 @@ fun SharedAlbumDetailScreen(
         settingsStore.gridColumnsLandscape
     } else {
         settingsStore.gridColumnsPortrait
+    }
+
+    // --- DYNAMIC URL RESOLUTION ---
+    val activeBaseUrl = remember(settingsStore.serverUrl, settingsStore.localServerUrl, settingsStore.useLocalServer) {
+        var url = settingsStore.serverUrl.ifBlank { "http://127.0.0.1:8000/" }
+        if (settingsStore.useLocalServer && settingsStore.localServerUrl.isNotBlank()) {
+            val connManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val isWifi = connManager.getNetworkCapabilities(connManager.activeNetwork)
+                ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+            if (isWifi) {
+                url = settingsStore.localServerUrl
+            }
+        }
+        if (!url.endsWith("/")) "$url/" else url
     }
 
     LaunchedEffect(albumId) {
@@ -192,7 +209,7 @@ fun SharedAlbumDetailScreen(
                         ) {
                             AsyncImage(
                                 model = ImageRequest.Builder(context)
-                                    .data("http://192.168.0.181:8000/photos/file/${photo.id}?thumbnail=true")
+                                    .data("${activeBaseUrl}photos/file/${photo.id}?thumbnail=true") // UPDATED HERE
                                     .addHeader("Authorization", "Bearer $token")
                                     .build(),
                                 contentDescription = null,

@@ -25,6 +25,7 @@ class SessionStore(context: Context) {
     fun getToken(): String? = prefs.getString("jwt", null)
 
     fun clear() {
+        prefs.edit().remove("jwt").apply()
         prefs.edit().clear().apply()
     }
 }

@@ -46,7 +46,7 @@ enum class AppTab { PHOTOS, ALBUMS, SHARED }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun HomeScreen(onNavigateToSettings: () -> Unit) {
+fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val settingsStore = remember { SettingsStore(context) }
@@ -83,7 +83,7 @@ fun HomeScreen(onNavigateToSettings: () -> Unit) {
 
     // --- FIX: Dynamic URL with your 192.168.0.181 as the bulletproof default ---
     val activeBaseUrl = remember(settingsStore.serverUrl, settingsStore.localServerUrl, settingsStore.useLocalServer) {
-        var url = settingsStore.serverUrl.ifBlank { "http://192.168.0.181:8000/" }
+        var url = settingsStore.serverUrl.ifBlank { "http://127.0.0.1:8000/" }
 
         if (settingsStore.useLocalServer && settingsStore.localServerUrl.isNotBlank()) {
             val connManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager

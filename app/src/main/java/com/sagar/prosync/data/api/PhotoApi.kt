@@ -35,7 +35,7 @@ data class PhotoListResponse(val photos: List<RemotePhoto>)
 
 data class DeletePhotosRequest(val photo_ids: List<Int>)
 
-data class AlbumDto(val id: Int, val name: String, val owner_id: Int? = null)
+data class AlbumDto(val id: Int, val name: String, val owner_id: Int? = null, val owner_username: String? = null)
 
 data class AlbumsResponse(val owned: List<AlbumDto>, val shared_with_me: List<AlbumDto>)
 

@@ -1,6 +1,9 @@
 package com.sagar.prosync.ui
 
+import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -22,6 +25,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.sagar.prosync.data.SettingsStore
 import com.sagar.prosync.ui.utils.ImageUtils
 import kotlinx.coroutines.launch
 
@@ -34,12 +38,27 @@ fun PhotoViewerScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val settingsStore = remember { SettingsStore(context) }
 
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var isProcessing by remember { mutableStateOf(false) }
 
-    val imageUrl = "http://192.168.0.181:8000/photos/file/$photoId"
+    // --- DYNAMIC URL RESOLUTION ---
+    val activeBaseUrl = remember(settingsStore.serverUrl, settingsStore.localServerUrl, settingsStore.useLocalServer) {
+        var url = settingsStore.serverUrl.ifBlank { "http://127.0.0.1:8000/" }
+        if (settingsStore.useLocalServer && settingsStore.localServerUrl.isNotBlank()) {
+            val connManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val isWifi = connManager.getNetworkCapabilities(connManager.activeNetwork)
+                ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+            if (isWifi) {
+                url = settingsStore.localServerUrl
+            }
+        }
+        if (!url.endsWith("/")) "$url/" else url
+    }
+
+    val imageUrl = "${activeBaseUrl}photos/file/$photoId" // UPDATED HERE
     val tempFileName = "PhotoSync_$photoId.jpg"
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {

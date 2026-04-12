@@ -203,7 +203,7 @@ fun SharedTab(onAlbumClick: (Int) -> Unit) {
                             Spacer(Modifier.width(16.dp))
                             Column {
                                 Text(album.name, style = MaterialTheme.typography.titleLarge)
-                                Text("Shared with you", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("Shared by ${album.owner_username ?: "Unknown"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }

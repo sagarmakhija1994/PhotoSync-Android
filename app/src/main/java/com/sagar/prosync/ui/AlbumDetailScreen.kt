@@ -1,6 +1,9 @@
 package com.sagar.prosync.ui
 
+import android.content.Context
 import android.content.res.Configuration
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -91,6 +94,20 @@ fun AlbumDetailScreen(
         settingsStore.gridColumnsPortrait
     }
 
+    // --- DYNAMIC URL RESOLUTION ---
+    val activeBaseUrl = remember(settingsStore.serverUrl, settingsStore.localServerUrl, settingsStore.useLocalServer) {
+        var url = settingsStore.serverUrl.ifBlank { "http://127.0.0.1:8000/" }
+        if (settingsStore.useLocalServer && settingsStore.localServerUrl.isNotBlank()) {
+            val connManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val isWifi = connManager.getNetworkCapabilities(connManager.activeNetwork)
+                ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+            if (isWifi) {
+                url = settingsStore.localServerUrl
+            }
+        }
+        if (!url.endsWith("/")) "$url/" else url
+    }
+
     LaunchedEffect(albumId, refreshTrigger) {
         try {
             isLoading = true
@@ -114,7 +131,6 @@ fun AlbumDetailScreen(
                     title = { Text("${selectedPhotoIds.size} Selected") },
                     navigationIcon = { IconButton(onClick = { selectedPhotoIds.clear() }) { Icon(Icons.Default.Close, "Cancel") } },
                     actions = {
-                        // NEW: UNLINK PHOTOS BUTTON
                         IconButton(onClick = {
                             coroutineScope.launch {
                                 isProcessing = true
@@ -215,7 +231,7 @@ fun AlbumDetailScreen(
                         ) {
                             AsyncImage(
                                 model = ImageRequest.Builder(context)
-                                    .data("http://192.168.0.181:8000/photos/file/${photo.id}?thumbnail=true")
+                                    .data("${activeBaseUrl}photos/file/${photo.id}?thumbnail=true") // UPDATED HERE
                                     .addHeader("Authorization", "Bearer $token")
                                     .crossfade(true).build(),
                                 contentDescription = null, contentScale = ContentScale.Crop,
@@ -230,7 +246,6 @@ fun AlbumDetailScreen(
                 }
             }
 
-            // PROCESSING OVERLAY (Blocks UI interactions!)
             if (isProcessing) {
                 Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)), contentAlignment = Alignment.Center) {
                     Card(modifier = Modifier.padding(16.dp)) {
@@ -245,7 +260,6 @@ fun AlbumDetailScreen(
         }
     }
 
-    // OVERLAYS
     viewingPhotoId?.let { photoId -> PhotoViewerScreen(photoId = photoId, token = token, onClose = { viewingPhotoId = null }) }
     if (showAddPhotosPicker) { AddPhotosPickerOverlay(albumId = albumId, api = api, token = token, onClose = { showAddPhotosPicker = false }, onPhotosAdded = { showAddPhotosPicker = false; refreshTrigger++ }) }
 
@@ -270,7 +284,6 @@ fun AlbumDetailScreen(
                     Spacer(Modifier.height(16.dp))
 
                     if (searchQuery.isEmpty()) {
-                        // --- DEFAULT VIEW: Show established network ---
                         Text("My Network", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.height(8.dp))
 
@@ -306,7 +319,6 @@ fun AlbumDetailScreen(
                             }
                         }
                     } else {
-                        // --- SEARCH VIEW: Show all users + "Following" Tags ---
                         if (isLoadingSearch) {
                             CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
                         } else if (searchQuery.length < 3) {
@@ -314,7 +326,6 @@ fun AlbumDetailScreen(
                         } else {
                             LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
                                 items(availableUsers) { serverUser ->
-                                    // Magic check: Is this search result already in my connections?
                                     val isKnown = myConnections.any { it.user_id == serverUser.id }
 
                                     Card(
@@ -336,7 +347,6 @@ fun AlbumDetailScreen(
                                                 Spacer(Modifier.width(12.dp))
                                                 Text(serverUser.username, style = MaterialTheme.typography.titleMedium)
                                             }
-                                            // The visual tag!
                                             if (isKnown) {
                                                 Surface(
                                                     color = MaterialTheme.colorScheme.primaryContainer,
@@ -430,7 +440,7 @@ fun AlbumDetailScreen(
                         showDeleteDialog = false
                         try {
                             api.deleteAlbum(albumId, deleteFilesPermanently)
-                            onClose() // Navigate out of the album immediately!
+                            onClose()
                         } catch (e: Exception) { e.printStackTrace(); isProcessing = false }
                     }
                 }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
@@ -440,7 +450,6 @@ fun AlbumDetailScreen(
     }
 }
 
-// --- The Helper Picker Screen ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddPhotosPickerOverlay(
@@ -463,6 +472,20 @@ fun AddPhotosPickerOverlay(
         settingsStore.gridColumnsLandscape
     } else {
         settingsStore.gridColumnsPortrait
+    }
+
+    // --- DYNAMIC URL RESOLUTION ---
+    val activeBaseUrl = remember(settingsStore.serverUrl, settingsStore.localServerUrl, settingsStore.useLocalServer) {
+        var url = settingsStore.serverUrl.ifBlank { "http://127.0.0.1:8000/" }
+        if (settingsStore.useLocalServer && settingsStore.localServerUrl.isNotBlank()) {
+            val connManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val isWifi = connManager.getNetworkCapabilities(connManager.activeNetwork)
+                ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+            if (isWifi) {
+                url = settingsStore.localServerUrl
+            }
+        }
+        if (!url.endsWith("/")) "$url/" else url
     }
 
     LaunchedEffect(Unit) {
@@ -520,7 +543,7 @@ fun AddPhotosPickerOverlay(
                         ) {
                             AsyncImage(
                                 model = ImageRequest.Builder(context)
-                                    .data("http://192.168.0.181:8000/photos/file/${photo.id}?thumbnail=true")
+                                    .data("${activeBaseUrl}photos/file/${photo.id}?thumbnail=true") // UPDATED HERE
                                     .addHeader("Authorization", "Bearer $token")
                                     .build(),
                                 contentDescription = null,

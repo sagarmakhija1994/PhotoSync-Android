@@ -1,5 +1,6 @@
 package com.sagar.prosync.ui
 
+import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -18,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.work.*
+import com.sagar.prosync.data.SessionStore
 import com.sagar.prosync.data.SettingsStore
 import com.sagar.prosync.sync.FolderPicker
 import com.sagar.prosync.sync.FolderStore
@@ -27,10 +29,12 @@ import java.util.concurrent.TimeUnit
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onLogout: () -> Unit
 ) {
     val context = LocalContext.current
     val settingsStore = remember { SettingsStore(context) }
+    val sessionStore = remember { SessionStore(context) }
     val folderStore = remember { FolderStore(context) }
     val workManager = WorkManager.getInstance(context)
 
@@ -157,6 +161,17 @@ fun SettingsScreen(
             }
 
             Button(onClick = onNavigateBack, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) { Text("Back to Dashboard") }
+
+            Button(
+                onClick = {
+                    sessionStore.clear()
+                    onLogout()
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) {
+                Text("Log Out")
+            }
         }
     }
 }

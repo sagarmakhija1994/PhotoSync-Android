@@ -94,6 +94,9 @@ class MainActivity : ComponentActivity() {
                         HomeScreen(
                             onNavigateToSettings = {
                                 currentScreen = "SETTINGS"
+                            },
+                            onLogout = { // <--- IF Settings is an overlay inside Home
+                                currentScreen = "LOGIN"
                             }
                         )
                     }
@@ -102,6 +105,9 @@ class MainActivity : ComponentActivity() {
                         SettingsScreen(
                             onNavigateBack = {
                                 currentScreen = "HOME"
+                            },
+                            onLogout = { // <--- IF Settings is managed in MainActivity
+                                currentScreen = "LOGIN"
                             }
                         )
                     }
