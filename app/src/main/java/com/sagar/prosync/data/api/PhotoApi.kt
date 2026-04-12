@@ -47,6 +47,16 @@ data class AddPhotosRequest(val photo_ids: List<Int>)
 
 data class AlbumDetailResponse(val id: Int, val name: String, val owner_id: Int, val photos: List<RemotePhoto>)
 
+data class ShareAlbumRequest(val target_username: String)
+
+data class ShareAlbumResponse(val status: String, val message: String)
+
+data class ImportPhotoRequest(val photo_id: Int)
+
+data class ImportPhotoResponse(val status: String, val message: String?, val new_photo_id: Int? = null)
+
+data class UserDto(val id: Int, val username: String)
+
 interface PhotoApi {
 
     @POST("/photos/check-batch")
@@ -86,4 +96,21 @@ interface PhotoApi {
 
     @retrofit2.http.GET("/albums/{album_id}")
     suspend fun getAlbumDetails(@retrofit2.http.Path("album_id") albumId: Int): AlbumDetailResponse
+
+    @retrofit2.http.POST("/albums/{album_id}/share")
+    suspend fun shareAlbum(
+        @retrofit2.http.Path("album_id") albumId: Int,
+        @retrofit2.http.Body request: ShareAlbumRequest
+    ): ShareAlbumResponse
+
+    @retrofit2.http.POST("/albums/import-photo")
+    suspend fun importSharedPhoto(
+        @retrofit2.http.Body request: ImportPhotoRequest
+    ): ImportPhotoResponse
+
+    @retrofit2.http.POST("/albums/{album_id}/import-all")
+    suspend fun importEntireAlbum(@retrofit2.http.Path("album_id") albumId: Int): Map<String, Any>
+
+    @retrofit2.http.GET("/albums/available-users")
+    suspend fun searchUsers(@retrofit2.http.Query("q") query: String): List<UserDto>
 }

@@ -66,6 +66,8 @@ fun HomeScreen(onNavigateToSettings: () -> Unit) {
 
     var viewingAlbumId by remember { mutableStateOf<Int?>(null) }
 
+    var viewingSharedAlbumId by remember { mutableStateOf<Int?>(null) }
+
     val workInfos by workManager.getWorkInfosForUniqueWorkLiveData("ManualPhotoSyncJob").observeAsState()
     val isSyncing = workInfos?.any { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED } == true
 
@@ -242,7 +244,7 @@ fun HomeScreen(onNavigateToSettings: () -> Unit) {
                     }
                 }
                 AppTab.ALBUMS -> AlbumsTab(onAlbumClick = { viewingAlbumId = it })
-                AppTab.SHARED -> SharedTab()
+                AppTab.SHARED -> SharedTab(onAlbumClick = { viewingSharedAlbumId = it })
             }
         }
     }
@@ -261,6 +263,14 @@ fun HomeScreen(onNavigateToSettings: () -> Unit) {
         AlbumDetailScreen(
             albumId = albumId,
             onClose = { viewingAlbumId = null }
+        )
+    }
+
+    // --- SHARED ALBUM DETAIL OVERLAY ---
+    viewingSharedAlbumId?.let { albumId ->
+        SharedAlbumDetailScreen(
+            albumId = albumId,
+            onClose = { viewingSharedAlbumId = null }
         )
     }
 

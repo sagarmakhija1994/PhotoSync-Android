@@ -4,14 +4,18 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn // Added for the search list
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items // Added for the search list items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Person // Added for the user icon
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,6 +33,8 @@ import com.sagar.prosync.data.api.AddPhotosRequest
 import com.sagar.prosync.data.api.AlbumDetailResponse
 import com.sagar.prosync.data.api.PhotoApi
 import com.sagar.prosync.data.api.RemotePhoto
+import com.sagar.prosync.data.api.ShareAlbumRequest
+import com.sagar.prosync.data.api.UserDto
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,6 +58,13 @@ fun AlbumDetailScreen(
     var viewingPhotoId by remember { mutableStateOf<Int?>(null) }
     var showAddPhotosPicker by remember { mutableStateOf(false) }
 
+    // --- LIVE SEARCH SHARE DIALOG STATE ---
+    var showShareDialog by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var shareMessage by remember { mutableStateOf<String?>(null) }
+    var availableUsers by remember { mutableStateOf<List<UserDto>>(emptyList()) }
+    var isLoadingUsers by remember { mutableStateOf(false) }
+
     // Fetch Album Content
     LaunchedEffect(albumId, refreshTrigger) {
         try {
@@ -64,12 +77,39 @@ fun AlbumDetailScreen(
         }
     }
 
+    // --- THE LIVE SEARCH DEBOUNCER ---
+    LaunchedEffect(searchQuery) {
+        if (searchQuery.length >= 3) {
+            kotlinx.coroutines.delay(500) // Wait 500ms after they stop typing
+            isLoadingUsers = true
+            try {
+                availableUsers = api.searchUsers(searchQuery)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                isLoadingUsers = false
+            }
+        } else {
+            availableUsers = emptyList() // Clear list if less than 3 chars
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(albumDetails?.name ?: "Loading Album...") },
                 navigationIcon = {
                     IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, "Back") }
+                },
+                actions = {
+                    IconButton(onClick = {
+                        showShareDialog = true
+                        searchQuery = "" // Reset search when opening
+                        availableUsers = emptyList()
+                        shareMessage = null
+                    }) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = "Share Album")
+                    }
                 }
             )
         },
@@ -137,6 +177,87 @@ fun AlbumDetailScreen(
             onPhotosAdded = {
                 showAddPhotosPicker = false
                 refreshTrigger++ // Reload the album!
+            }
+        )
+    }
+
+    // --- OVERLAY 3: Live Search Share Dialog ---
+    if (showShareDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showShareDialog = false
+                shareMessage = null
+            },
+            title = { Text("Share with Family") },
+            text = {
+                Column {
+                    if (shareMessage != null) {
+                        Text(shareMessage!!, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
+                        Spacer(Modifier.height(16.dp))
+                    }
+
+                    // The Search Box
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        label = { Text("Search Username") },
+                        placeholder = { Text("Type at least 3 letters...") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(Modifier.height(16.dp))
+
+                    if (isLoadingUsers) {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                    } else if (searchQuery.length < 3) {
+                        Text("Type 3 or more characters to search.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else if (availableUsers.isEmpty()) {
+                        Text("No users found.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    } else {
+                        // Search Results List
+                        LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
+                            items(availableUsers) { serverUser ->
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                        .clickable {
+                                            // Tap the user to share!
+                                            coroutineScope.launch {
+                                                try {
+                                                    val response = api.shareAlbum(albumId, ShareAlbumRequest(serverUser.username))
+                                                    shareMessage = "Shared with ${serverUser.username}!"
+                                                    kotlinx.coroutines.delay(1500)
+                                                    showShareDialog = false
+                                                    shareMessage = null
+                                                } catch (e: Exception) {
+                                                    shareMessage = "Error sharing album."
+                                                }
+                                            }
+                                        },
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                        Spacer(Modifier.width(12.dp))
+                                        Text(serverUser.username, style = MaterialTheme.typography.titleMedium)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { },
+            dismissButton = {
+                TextButton(onClick = {
+                    showShareDialog = false
+                    shareMessage = null
+                }) { Text("Cancel") }
             }
         )
     }
