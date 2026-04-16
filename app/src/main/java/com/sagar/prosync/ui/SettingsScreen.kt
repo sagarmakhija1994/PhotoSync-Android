@@ -2,6 +2,7 @@ package com.sagar.prosync.ui
 
 import android.content.Context
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -9,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircleOutline
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.RemoveCircleOutline
@@ -19,11 +21,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.work.*
+import com.sagar.prosync.data.ApiClient
 import com.sagar.prosync.data.SessionStore
 import com.sagar.prosync.data.SettingsStore
+import com.sagar.prosync.data.api.PhotoApi
 import com.sagar.prosync.sync.FolderPicker
 import com.sagar.prosync.sync.FolderStore
 import com.sagar.prosync.sync.SyncWorker
+import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -33,10 +38,12 @@ fun SettingsScreen(
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val settingsStore = remember { SettingsStore(context) }
     val sessionStore = remember { SessionStore(context) }
     val folderStore = remember { FolderStore(context) }
     val workManager = WorkManager.getInstance(context)
+    val api = remember { ApiClient.create(context).create(PhotoApi::class.java) }
 
     var syncPhotos by remember { mutableStateOf(settingsStore.syncPhotos) }
     var syncVideos by remember { mutableStateOf(settingsStore.syncVideos) }
@@ -48,6 +55,7 @@ fun SettingsScreen(
     var columnsLandscape by remember { mutableIntStateOf(settingsStore.gridColumnsLandscape) }
 
     var selectedFolders by remember { mutableStateOf(folderStore.getAll().toList()) }
+    var isBackfilling by remember { mutableStateOf(false) }
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val uri = result.data?.data ?: return@rememberLauncherForActivityResult
@@ -75,7 +83,16 @@ fun SettingsScreen(
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Settings") }) }
+        topBar = {
+            TopAppBar(
+                title = { Text("Settings") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Go Back")
+                    }
+                }
+            )
+        }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize().padding(16.dp)) {
 
@@ -160,14 +177,50 @@ fun SettingsScreen(
                 }
             }
 
-            Button(onClick = onNavigateBack, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) { Text("Back to Dashboard") }
+            // --- 2. ADMIN SECTION (Easy to comment out before building the final APK) ---
+
+            Text(
+                text = "Admin Tools",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
+            )
+
+            Button(
+                onClick = {
+                    coroutineScope.launch {
+                        isBackfilling = true
+                        try {
+                            val response = api.triggerGifBackfill()
+                            Toast.makeText(context, response.message, Toast.LENGTH_LONG).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Backfill Failed: ${e.message}", Toast.LENGTH_LONG).show()
+                        } finally {
+                            isBackfilling = false
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                )
+            ) {
+                if (isBackfilling) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onErrorContainer)
+                } else {
+                    Text("Trigger GIF Backfill (Server)")
+                }
+            }
+
+            // ----------------------------------------------------------------------------
 
             Button(
                 onClick = {
                     sessionStore.clear()
                     onLogout()
                 },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
             ) {
                 Text("Log Out")

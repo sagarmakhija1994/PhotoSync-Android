@@ -1,5 +1,6 @@
 package com.sagar.prosync.data.api
 
+import android.util.Log
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import retrofit2.http.Body
@@ -170,4 +171,8 @@ interface PhotoApi {
 
     @retrofit2.http.GET("/network/connections")
     suspend fun getConnections(): List<ConnectionDto>
+
+    // --- ADMIN ENDPOINTS ---
+    @retrofit2.http.POST("/photos/admin/backfill-gifs")
+    suspend fun triggerGifBackfill(): GenericMessageResponse
 }

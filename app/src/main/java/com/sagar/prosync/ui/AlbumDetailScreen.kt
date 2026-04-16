@@ -65,7 +65,7 @@ fun AlbumDetailScreen(
     var refreshTrigger by remember { mutableIntStateOf(0) }
 
     // Viewing & Selection States
-    var viewingPhotoId by remember { mutableStateOf<Int?>(null) }
+    var viewingPhotoIndex by remember { mutableStateOf<Int?>(null) }
     var showAddPhotosPicker by remember { mutableStateOf(false) }
     val selectedPhotoIds = remember { mutableStateListOf<Int>() }
 
@@ -224,7 +224,7 @@ fun AlbumDetailScreen(
                                     onClick = {
                                         if (selectedPhotoIds.isNotEmpty()) {
                                             if (isSelected) selectedPhotoIds.remove(photo.id) else selectedPhotoIds.add(photo.id)
-                                        } else { viewingPhotoId = photo.id }
+                                        } else { viewingPhotoIndex = albumDetails!!.photos.indexOf(photo) }
                                     },
                                     onLongClick = { if (!isSelected) selectedPhotoIds.add(photo.id) }
                                 )
@@ -260,7 +260,15 @@ fun AlbumDetailScreen(
         }
     }
 
-    viewingPhotoId?.let { photoId -> PhotoViewerScreen(photoId = photoId, token = token, onClose = { viewingPhotoId = null }) }
+    viewingPhotoIndex?.let { initialIndex ->
+        PhotoViewerScreen(
+            photos = albumDetails?.photos ?: emptyList(),
+            initialIndex = initialIndex,
+            activeBaseUrl = activeBaseUrl,
+            token = token,
+            onClose = { viewingPhotoIndex = null }
+        )
+    }
     if (showAddPhotosPicker) { AddPhotosPickerOverlay(albumId = albumId, api = api, token = token, onClose = { showAddPhotosPicker = false }, onPhotosAdded = { showAddPhotosPicker = false; refreshTrigger++ }) }
 
     if (showShareDialog) {

@@ -18,7 +18,7 @@ object ApiClient {
     fun create(context: Context): Retrofit {
 
         val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = HttpLoggingInterceptor.Level.HEADERS
         }
 
         val authInterceptor = Interceptor { chain ->

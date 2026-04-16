@@ -32,18 +32,13 @@ class SyncWorker(
 
             if (total == 0) return Result.success()
 
-            // Initialize Foreground Service with "Scanning..." state
-            setForeground(createForegroundInfo(0, total, "Scanning for new files..."))
+            // Initialize Foreground Service
+            setForeground(createForegroundInfo(0, total, "Starting sync..."))
 
-            // Hand off to the Batch Processor
-            repo.processSync(items) { current, newTotal ->
-                // This callback fires after every successful upload
-                if (newTotal == 0) {
-                    // Everything is already backed up!
-                    setForeground(createForegroundInfo(total, total, "Everything is up to date!"))
-                } else {
-                    setForeground(createForegroundInfo(current, newTotal, "Uploading $current of $newTotal..."))
-                }
+            // Hand off to the Repository (Two-Phase Sync)
+            repo.processSync(items) { message, current, maxTotal ->
+                // The repository now dictates the exact message and progress metrics!
+                setForeground(createForegroundInfo(current, maxTotal, message))
             }
 
             Result.success()

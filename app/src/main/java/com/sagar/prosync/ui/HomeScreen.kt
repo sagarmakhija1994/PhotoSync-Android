@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.res.Configuration
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.os.Build
+import android.util.Log
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -33,7 +35,10 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import coil.ImageLoader
 import coil.compose.AsyncImage
+import coil.decode.GifDecoder
+import coil.decode.ImageDecoderDecoder
 import coil.request.ImageRequest
 import com.sagar.prosync.data.ApiClient
 import com.sagar.prosync.data.SessionStore
@@ -57,7 +62,7 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
     var currentTab by remember { mutableStateOf(AppTab.PHOTOS) }
     var photos by remember { mutableStateOf<List<RemotePhoto>>(emptyList()) }
     var isLoadingGallery by remember { mutableStateOf(true) }
-    var viewingPhotoId by remember { mutableStateOf<Int?>(null) }
+    var viewingPhotoIndex by remember { mutableStateOf<Int?>(null) }
 
     val selectedPhotoIds = remember { mutableStateListOf<Int>() }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -73,6 +78,34 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
 
     var showNetworkScreen by remember { mutableStateOf(false) }
 
+    // This creates a single, highly optimized ImageLoader that knows how to play GIFs
+    val gifImageLoader = remember {
+        ImageLoader.Builder(context)
+            .memoryCache {
+                coil.memory.MemoryCache.Builder(context)
+                    .maxSizePercent(0.25)
+                    .build()
+            }
+            .diskCache {
+                coil.disk.DiskCache.Builder()
+                    .directory(context.cacheDir.resolve("photosync_cache"))
+                    .maxSizeBytes(1000L * 1024 * 1024) // 1000 MB local cache
+                    .build()
+            }
+            // THIS is the magic bullet. It forces Android to cache the files
+            // locally regardless of network conditions!
+            .respectCacheHeaders(false)
+            .components {
+                if (Build.VERSION.SDK_INT >= 28) {
+                    add(ImageDecoderDecoder.Factory())
+                } else {
+                    add(GifDecoder.Factory())
+                }
+            }
+            .build()
+    }
+    // --------------------------
+
     val configuration = LocalConfiguration.current
     val columns = if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
         settingsStore.gridColumnsLandscape
@@ -81,7 +114,6 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
     }
     val safeColumns = columns.coerceAtLeast(1)
 
-    // --- FIX: Dynamic URL with your 192.168.0.181 as the bulletproof default ---
     val activeBaseUrl = remember(settingsStore.serverUrl, settingsStore.localServerUrl, settingsStore.useLocalServer) {
         var url = settingsStore.serverUrl.ifBlank { "http://127.0.0.1:8000/" }
 
@@ -99,15 +131,34 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
     val workInfos by workManager.getWorkInfosForUniqueWorkLiveData("ManualPhotoSyncJob").observeAsState()
     val isSyncing = workInfos?.any { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED } == true
 
-    LaunchedEffect(isSyncing, refreshTrigger) {
-        if (!isSyncing) {
+    // --- UI FIX 1: Initial Load & Manual Refresh (Unaffected by Sync Button) ---
+    LaunchedEffect(refreshTrigger) {
+        try {
+            Log.e("","")
+            if (photos.isEmpty()) isLoadingGallery = true
+            photos = api.getPhotos().photos
+            photos.forEach {
+                Log.e("Dhiraj","Hello: ${it.filename}, ${it.media_type}")
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e // CRITICAL: Never swallow coroutine cancellations!
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            isLoadingGallery = false
+        }
+    }
+
+    // --- UI FIX 2: Silently update grid when Sync FINISHES ---
+    LaunchedEffect(isSyncing) {
+        // Only run if sync just stopped, and we already loaded the UI once
+        if (!isSyncing && photos.isNotEmpty()) {
             try {
-                isLoadingGallery = true
                 photos = api.getPhotos().photos
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 e.printStackTrace()
-            } finally {
-                isLoadingGallery = false
             }
         }
     }
@@ -140,7 +191,6 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
             } else {
                 TopAppBar(
                     title = {
-                        // --- UI FIX: Title and Status Stacked! ---
                         Column {
                             Text(when(currentTab) {
                                 AppTab.PHOTOS -> "PhotoSync"
@@ -158,7 +208,6 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
                         }
                     },
                     actions = {
-                        // --- UI FIX: Sync Button moved next to Network! ---
                         if (currentTab == AppTab.PHOTOS) {
                             IconButton(
                                 enabled = !isSyncing,
@@ -227,6 +276,16 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
                                 val isSelected = selectedPhotoIds.contains(photo.id)
                                 val token = sessionStore.getToken() ?: ""
 
+                                val imageRequest = remember(photo.id, activeBaseUrl, token) {
+                                    ImageRequest.Builder(context)
+                                        .data("${activeBaseUrl}photos/file/${photo.id}?thumbnail=true")
+                                        .addHeader("Authorization", "Bearer $token")
+                                        .diskCacheKey("thumb_v1_${photo.id}") // Force it to save to the phone's hard drive
+                                        .memoryCacheKey("thumb_v1_${photo.id}")
+                                        .crossfade(true)
+                                        .build()
+                                }
+
                                 Box(
                                     modifier = Modifier
                                         .aspectRatio(1f)
@@ -235,32 +294,67 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
                                             onClick = {
                                                 if (selectedPhotoIds.isNotEmpty()) {
                                                     if (isSelected) selectedPhotoIds.remove(photo.id) else selectedPhotoIds.add(photo.id)
-                                                } else { viewingPhotoId = photo.id }
+                                                } else {
+                                                    viewingPhotoIndex = photos.indexOf(photo) // Pass the index!
+                                                }
                                             },
                                             onLongClick = { if (!isSelected) selectedPhotoIds.add(photo.id) }
                                         )
                                 ) {
+                                    // 1. The Image Loader with Fallback styling
                                     AsyncImage(
-                                        model = ImageRequest.Builder(context)
-                                            .data("${activeBaseUrl}photos/file/${photo.id}?thumbnail=true")
-                                            .addHeader("Authorization", "Bearer $token")
-                                            .crossfade(true)
-                                            .build(),
+                                        model = imageRequest,
+                                        imageLoader = gifImageLoader,
                                         contentDescription = null,
                                         contentScale = ContentScale.Crop,
+                                        // This modifier gives it a subtle background color if the image is missing/loading
                                         modifier = Modifier
                                             .fillMaxSize()
+                                            .background(MaterialTheme.colorScheme.surfaceVariant)
                                             .padding(if (isSelected) 8.dp else 0.dp)
                                             .clip(if (isSelected) MaterialTheme.shapes.medium else MaterialTheme.shapes.extraSmall)
                                     )
 
+                                    // 2. The Video Indicator Overlay
+                                    if (photo.media_type == "video") {
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .padding(6.dp)
+                                                .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    imageVector = Icons.Default.PlayArrow,
+                                                    contentDescription = "Video",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(2.dp))
+                                                // Optional: You could display duration here if the API provided it
+                                                Text(
+                                                    text = "Video",
+                                                    color = Color.White,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    modifier = Modifier.padding(end = 2.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // 3. The Selection Checkmark (Moved to bottom right so it doesn't overlap the video icon)
                                     if (isSelected) {
                                         Icon(
                                             imageVector = Icons.Default.CheckCircle,
                                             contentDescription = "Selected",
                                             tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.padding(4.dp).size(24.dp).align(Alignment.TopStart)
-                                                .background(Color.White, CircleShape).border(1.dp, Color.White, CircleShape)
+                                            modifier = Modifier
+                                                .align(Alignment.BottomEnd)
+                                                .padding(4.dp)
+                                                .size(24.dp)
+                                                .background(Color.White, CircleShape)
+                                                .border(1.dp, Color.White, CircleShape)
                                         )
                                     }
                                 }
@@ -279,11 +373,22 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
     }
 
     // --- OVERLAYS ---
-    viewingPhotoId?.let { photoId ->
+    /*viewingPhotoId?.let { photoId ->
         PhotoViewerScreen(
             photoId = photoId,
             token = sessionStore.getToken() ?: "",
             onClose = { viewingPhotoId = null }
+        )
+    }*/
+
+    // --- NEW PAGER OVERLAY ---
+    viewingPhotoIndex?.let { initialIndex ->
+        PhotoViewerScreen(
+            photos = photos,
+            initialIndex = initialIndex,
+            activeBaseUrl = activeBaseUrl,
+            token = sessionStore.getToken() ?: "",
+            onClose = { viewingPhotoIndex = null }
         )
     }
 

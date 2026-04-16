@@ -10,6 +10,7 @@ data class MediaItem(
     val uri: Uri,
     val relativePath: String,
     val size: Long,
+    val dateModified: Long,
     val isVideo: Boolean
 )
 
@@ -89,7 +90,8 @@ object MediaScanner {
             MediaStore.MediaColumns._ID,
             MediaStore.MediaColumns.SIZE,
             MediaStore.MediaColumns.RELATIVE_PATH,
-            MediaStore.MediaColumns.DISPLAY_NAME
+            MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.MediaColumns.DATE_MODIFIED
         )
 
         context.contentResolver.query(
@@ -104,10 +106,12 @@ object MediaScanner {
             val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
             val pathCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.RELATIVE_PATH)
             val nameCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
+            val dateCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)
 
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idCol)
                 val size = cursor.getLong(sizeCol)
+                val dateModified = cursor.getLong(dateCol)
                 val relativeDir = cursor.getString(pathCol) ?: continue
                 val name = cursor.getString(nameCol) ?: continue
 
@@ -126,6 +130,7 @@ object MediaScanner {
                     uri = contentUri,
                     relativePath = "$relativeDir$name", // EXACT backend match
                     size = size,
+                    dateModified = dateModified,
                     isVideo = isVideo
                 )
             }
