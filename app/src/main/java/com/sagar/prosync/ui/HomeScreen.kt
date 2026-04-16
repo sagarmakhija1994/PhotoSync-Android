@@ -4,8 +4,15 @@ import android.content.Context
 import android.content.res.Configuration
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
 import android.os.Build
-import android.util.Log
+import android.os.ext.SdkExtensions
+import android.provider.MediaStore
+import android.provider.OpenableColumns
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,9 +36,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
@@ -44,8 +53,18 @@ import com.sagar.prosync.data.ApiClient
 import com.sagar.prosync.data.SessionStore
 import com.sagar.prosync.data.SettingsStore
 import com.sagar.prosync.data.api.*
+import com.sagar.prosync.sync.ManualUploadWorker
 import com.sagar.prosync.sync.SyncWorker
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.File
+import java.io.FileInputStream
+import java.security.MessageDigest
 
 enum class AppTab { PHOTOS, ALBUMS, SHARED }
 
@@ -78,6 +97,72 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
 
     var showNetworkScreen by remember { mutableStateOf(false) }
 
+    // --- WORK MANAGER STATES FOR MANUAL UPLOAD ---
+    val manualUploadInfo by workManager.getWorkInfosForUniqueWorkLiveData("ManualUploadJob").observeAsState()
+    val activeUploadJob = manualUploadInfo?.firstOrNull { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED }
+
+    // We create an independent UI state so the overlay shows instantly!
+    var forceShowUploadUI by remember { mutableStateOf(false) }
+
+    val isManualUploading = forceShowUploadUI || activeUploadJob != null
+    val manualUploadProgress = activeUploadJob?.progress?.getInt("PROGRESS", 0) ?: 0
+    val manualUploadTotal = activeUploadJob?.progress?.getInt("TOTAL", 0) ?: 0
+
+    LaunchedEffect(manualUploadInfo) {
+        val finishedJob = manualUploadInfo?.firstOrNull { it.state == WorkInfo.State.SUCCEEDED }
+        if (finishedJob != null) {
+            val count = finishedJob.outputData.getInt("SUCCESS_COUNT", 0)
+            if (count > 0) {
+                refreshTrigger++
+                Toast.makeText(context, "Successfully uploaded $count files!", Toast.LENGTH_SHORT).show()
+            }
+            forceShowUploadUI = false // Hide the UI
+            workManager.pruneWork()
+        }
+
+        // Also hide UI if it fails or crashes
+        if (manualUploadInfo?.any { it.state == WorkInfo.State.FAILED || it.state == WorkInfo.State.CANCELLED } == true) {
+            forceShowUploadUI = false
+            Toast.makeText(context, "Upload Failed or Cancelled.", Toast.LENGTH_SHORT).show()
+            workManager.pruneWork()
+        }
+    }
+
+    // 1. Get the absolute maximum limit safely
+    val maxSelectionLimit = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        // Safe for Android 13+
+        MediaStore.getPickImagesMaxLimit()
+    } else {
+        50
+    }
+
+    val multiplePhotoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = maxSelectionLimit)
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            // INSTANT UI FEEDBACK!
+            forceShowUploadUI = true
+
+            coroutineScope.launch {
+                withContext(Dispatchers.IO) {
+                    val queueFile = File(context.cacheDir, "upload_queue_${System.currentTimeMillis()}.txt")
+                    queueFile.writeText(uris.joinToString("\n") { it.toString() })
+
+                    val uploadRequest = OneTimeWorkRequestBuilder<ManualUploadWorker>()
+                        .setInputData(workDataOf("QUEUE_FILE_PATH" to queueFile.absolutePath))
+                        .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+                        .build()
+
+                    workManager.enqueueUniqueWork(
+                        "ManualUploadJob",
+                        ExistingWorkPolicy.REPLACE,
+                        uploadRequest
+                    )
+                }
+            }
+        }
+    }
+
     // This creates a single, highly optimized ImageLoader that knows how to play GIFs
     val gifImageLoader = remember {
         ImageLoader.Builder(context)
@@ -92,8 +177,6 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
                     .maxSizeBytes(1000L * 1024 * 1024) // 1000 MB local cache
                     .build()
             }
-            // THIS is the magic bullet. It forces Android to cache the files
-            // locally regardless of network conditions!
             .respectCacheHeaders(false)
             .components {
                 if (Build.VERSION.SDK_INT >= 28) {
@@ -104,7 +187,6 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
             }
             .build()
     }
-    // --------------------------
 
     val configuration = LocalConfiguration.current
     val columns = if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
@@ -128,20 +210,19 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
         if (!url.endsWith("/")) "$url/" else url
     }
 
+    val isLocalConnection = remember(activeBaseUrl, settingsStore.localServerUrl) {
+        settingsStore.localServerUrl.isNotBlank() && activeBaseUrl.startsWith(settingsStore.localServerUrl)
+    }
+
     val workInfos by workManager.getWorkInfosForUniqueWorkLiveData("ManualPhotoSyncJob").observeAsState()
     val isSyncing = workInfos?.any { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED } == true
 
-    // --- UI FIX 1: Initial Load & Manual Refresh (Unaffected by Sync Button) ---
     LaunchedEffect(refreshTrigger) {
         try {
-            Log.e("","")
             if (photos.isEmpty()) isLoadingGallery = true
             photos = api.getPhotos().photos
-            photos.forEach {
-                Log.e("Dhiraj","Hello: ${it.filename}, ${it.media_type}")
-            }
         } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e // CRITICAL: Never swallow coroutine cancellations!
+            throw e
         } catch (e: Exception) {
             e.printStackTrace()
         } finally {
@@ -149,9 +230,7 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
         }
     }
 
-    // --- UI FIX 2: Silently update grid when Sync FINISHES ---
     LaunchedEffect(isSyncing) {
-        // Only run if sync just stopped, and we already loaded the UI once
         if (!isSyncing && photos.isNotEmpty()) {
             try {
                 photos = api.getPhotos().photos
@@ -192,11 +271,26 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
                 TopAppBar(
                     title = {
                         Column {
-                            Text(when(currentTab) {
-                                AppTab.PHOTOS -> "PhotoSync"
-                                AppTab.ALBUMS -> "My Albums"
-                                AppTab.SHARED -> "Shared Space"
-                            })
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = when(currentTab) {
+                                        AppTab.PHOTOS -> "PhotoSync"
+                                        AppTab.ALBUMS -> "My Albums"
+                                        AppTab.SHARED -> "Shared Space"
+                                    }
+                                )
+
+                                if (currentTab == AppTab.PHOTOS) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Icon(
+                                        imageVector = if (isLocalConnection) Icons.Default.Wifi else Icons.Default.Cloud,
+                                        contentDescription = if (isLocalConnection) "Local Network" else "Cloud Network",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = if (isLocalConnection) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
                             if (currentTab == AppTab.PHOTOS) {
                                 val statusText = if (isSyncing) "Syncing now..." else if (settingsStore.autoSyncEnabled) "Auto-Sync: ON" else "Auto-Sync: OFF"
                                 Text(
@@ -257,6 +351,21 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
                     onClick = { currentTab = AppTab.SHARED }
                 )
             }
+        },
+        floatingActionButton = {
+            if (currentTab == AppTab.PHOTOS && selectedPhotoIds.isEmpty()) {
+                FloatingActionButton(
+                    onClick = {
+                        multiplePhotoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                        )
+                    },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Manual Upload")
+                }
+            }
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
@@ -280,7 +389,7 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
                                     ImageRequest.Builder(context)
                                         .data("${activeBaseUrl}photos/file/${photo.id}?thumbnail=true")
                                         .addHeader("Authorization", "Bearer $token")
-                                        .diskCacheKey("thumb_v1_${photo.id}") // Force it to save to the phone's hard drive
+                                        .diskCacheKey("thumb_v1_${photo.id}")
                                         .memoryCacheKey("thumb_v1_${photo.id}")
                                         .crossfade(true)
                                         .build()
@@ -295,19 +404,17 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
                                                 if (selectedPhotoIds.isNotEmpty()) {
                                                     if (isSelected) selectedPhotoIds.remove(photo.id) else selectedPhotoIds.add(photo.id)
                                                 } else {
-                                                    viewingPhotoIndex = photos.indexOf(photo) // Pass the index!
+                                                    viewingPhotoIndex = photos.indexOf(photo)
                                                 }
                                             },
                                             onLongClick = { if (!isSelected) selectedPhotoIds.add(photo.id) }
                                         )
                                 ) {
-                                    // 1. The Image Loader with Fallback styling
                                     AsyncImage(
                                         model = imageRequest,
                                         imageLoader = gifImageLoader,
                                         contentDescription = null,
                                         contentScale = ContentScale.Crop,
-                                        // This modifier gives it a subtle background color if the image is missing/loading
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .background(MaterialTheme.colorScheme.surfaceVariant)
@@ -315,7 +422,6 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
                                             .clip(if (isSelected) MaterialTheme.shapes.medium else MaterialTheme.shapes.extraSmall)
                                     )
 
-                                    // 2. The Video Indicator Overlay
                                     if (photo.media_type == "video") {
                                         Box(
                                             modifier = Modifier
@@ -332,7 +438,6 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
                                                     modifier = Modifier.size(14.dp)
                                                 )
                                                 Spacer(modifier = Modifier.width(2.dp))
-                                                // Optional: You could display duration here if the API provided it
                                                 Text(
                                                     text = "Video",
                                                     color = Color.White,
@@ -343,7 +448,6 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
                                         }
                                     }
 
-                                    // 3. The Selection Checkmark (Moved to bottom right so it doesn't overlap the video icon)
                                     if (isSelected) {
                                         Icon(
                                             imageVector = Icons.Default.CheckCircle,
@@ -369,19 +473,42 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
                 )
                 AppTab.SHARED -> SharedTab(onAlbumClick = { viewingSharedAlbumId = it })
             }
+
+            // --- THE NEW NON-BLOCKING PROGRESS OVERLAY ---
+            if (isManualUploading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .combinedClickable(onClick = {}, onLongClick = {}), // Prevents touches from passing through
+                    contentAlignment = Alignment.Center
+                ) {
+                    Card(modifier = Modifier.padding(24.dp)) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            CircularProgressIndicator()
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Uploading $manualUploadProgress / $manualUploadTotal",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "You can safely minimize the app.\nUpload will continue in the background.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 
     // --- OVERLAYS ---
-    /*viewingPhotoId?.let { photoId ->
-        PhotoViewerScreen(
-            photoId = photoId,
-            token = sessionStore.getToken() ?: "",
-            onClose = { viewingPhotoId = null }
-        )
-    }*/
-
-    // --- NEW PAGER OVERLAY ---
     viewingPhotoIndex?.let { initialIndex ->
         PhotoViewerScreen(
             photos = photos,
@@ -467,5 +594,67 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
             },
             dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } }
         )
+    }
+}
+
+// --- HELPER FUNCTION FOR MANUAL UPLOADS (Used by the Worker) ---
+suspend fun processAndUploadUri(
+    context: Context,
+    uri: Uri,
+    api: PhotoApi
+): Boolean {
+    return try {
+        val contentResolver = context.contentResolver
+
+        // 1. Get real file name and MIME type
+        var fileName = "uploaded_file.jpg"
+        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (cursor.moveToFirst() && nameIndex >= 0) {
+                fileName = cursor.getString(nameIndex)
+            }
+        }
+
+        val mimeType = contentResolver.getType(uri) ?: "image/jpeg"
+        val mediaTypeString = if (mimeType.startsWith("video")) "video" else "photo"
+
+        // 2. Copy the secure URI to a temporary cache file so we can hash and upload it
+        val tempFile = File(context.cacheDir, fileName)
+        contentResolver.openInputStream(uri)?.use { input ->
+            tempFile.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        }
+
+        // 3. Calculate SHA-256
+        val digest = MessageDigest.getInstance("SHA-256")
+        FileInputStream(tempFile).use { fis ->
+            val buffer = ByteArray(8192)
+            var bytesRead: Int
+            while (fis.read(buffer).also { bytesRead = it } != -1) {
+                digest.update(buffer, 0, bytesRead)
+            }
+        }
+        val sha256 = digest.digest().joinToString("") { "%02x".format(it) }
+
+        // 4. Prepare Retrofit Multipart Data
+        val requestFile = tempFile.asRequestBody(mimeType.toMediaTypeOrNull())
+        val body = MultipartBody.Part.createFormData("file", fileName, requestFile)
+
+        val sha256Body = sha256.toRequestBody("text/plain".toMediaTypeOrNull())
+
+        // THIS automatically places it in the "Manual Uploads" folder on your backend!
+        val pathBody = "Manual Uploads/$fileName".toRequestBody("text/plain".toMediaTypeOrNull())
+        val typeBody = mediaTypeString.toRequestBody("text/plain".toMediaTypeOrNull())
+
+        // 5. Upload!
+        api.upload(file = body, sha256 = sha256Body, relativePath = pathBody, mediaType = typeBody)
+
+        // 6. Cleanup temp file
+        tempFile.delete()
+        true
+    } catch (e: Exception) {
+        e.printStackTrace()
+        false
     }
 }

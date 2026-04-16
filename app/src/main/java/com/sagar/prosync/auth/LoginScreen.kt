@@ -24,8 +24,8 @@ fun LoginScreen(
     val scope = rememberCoroutineScope()
 
     // State Management
-    var username by remember { mutableStateOf("dhiraj") }
-    var password by remember { mutableStateOf("\$agarM1994") }
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var isPendingApproval by remember { mutableStateOf(false) }

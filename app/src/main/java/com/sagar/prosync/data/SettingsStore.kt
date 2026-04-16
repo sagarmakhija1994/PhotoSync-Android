@@ -10,7 +10,7 @@ class SettingsStore(context: Context) {
         set(value) = prefs.edit().putBoolean("sync_photos", value).apply()
 
     var syncVideos: Boolean
-        get() = prefs.getBoolean("sync_videos", false)
+        get() = prefs.getBoolean("sync_videos", true)
         set(value) = prefs.edit().putBoolean("sync_videos", value).apply()
 
     // If true, allow Cellular. If false, require WiFi.
