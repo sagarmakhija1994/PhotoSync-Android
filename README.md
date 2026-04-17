@@ -1,58 +1,127 @@
-# 📱 PhotoSync – Android Client
+# 📱 PhotoSync Android
 
-PhotoSync is the native Android companion app for the PhotoSync Self-Hosted Server. It provides a seamless, Google Photos-like experience for backing up, viewing, and sharing your personal media to your own private server.
+> 🚀 A modern, high-performance Android client for your private PhotoSync Server.
 
-Built using **Modern Android Development (MAD)** principles, it leverages Jetpack Compose, WorkManager, and optimized networking for efficient and reliable syncing.
-
-> ⚠️ This repository contains **only the Android Client app**.  
-> The FastAPI backend lives in a separate repository.
+[![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)]()
+[![Platform](https://img.shields.io/badge/platform-Android-green.svg)]()
+[![Kotlin](https://img.shields.io/badge/kotlin-Modern-blue.svg)]()
+[![UI](https://img.shields.io/badge/UI-Jetpack%20Compose-purple.svg)]()
 
 ---
 
-## 🌟 Features
+## 🔗 Ecosystem
 
-### 🔄 Automated Background Sync
-- ✅ **WorkManager Integration**  
-  Automatically backs up media every 24 hours.
+- 🖥 Backend Server → https://github.com/sagarmakhija1994/PhotoSync-Python
+- 📱 Android Client → (this repo)
 
-- ✅ **Battery & Data Aware**  
-  Syncs only when battery is sufficient. Supports WiFi-only or cellular options.
+---
 
-- ✅ **Folder Selection**  
-  Choose specific folders (Camera, WhatsApp, etc.) using persistent URI permissions.
+## ✨ What is PhotoSync Android?
+
+PhotoSync Android is a **privacy-first media backup app** that connects to your self-hosted PhotoSync server.
+
+- 🔄 Automatic background sync
+- ⚡ Lightning-fast local transfers
+- 🌐 Remote access via tunnel/domain
+- 👨‍👩‍👧 Private family sharing
+
+---
+
+## ⚡ Quick Start
+
+### 📥 Install APK
+
+- Download latest APK from **Releases**
+- Install on device
+- Open app
+
+---
+
+### 🔧 First Setup
+
+1. Enter **Server URL**
+   ```
+   https://your-domain.com
+   ```
+
+2. (Optional) Add **Local IP**
+   ```
+   http://192.168.x.x:8000
+   ```
+
+3. Enable **Prioritize Local Network** (recommended)
+
+4. Login → Done ✅
+
+---
+
+## 🏗 Architecture
+
+```mermaid
+flowchart LR
+    A[📱 Android App] -->|Local / Remote| B[🌐 PhotoSync Server]
+    B --> C[(📁 Storage)]
+    B --> D[(🗄 DB)]
+```
+
+---
+
+### 🖼️ Screenshots
+<div align="center"> <img src="https://github.com/user-attachments/assets/c347558c-3c0d-44fb-9f1c-b1e1874782bf" width="180"/> <img src="https://github.com/user-attachments/assets/c84ad64d-c1e5-490c-a322-b7bd913e9257" width="180"/> <img src="https://github.com/user-attachments/assets/2771f0f1-35ab-45a5-b4d6-a18d65033758" width="180"/> <img src="https://github.com/user-attachments/assets/3e5bca4f-f7bf-40ba-b1e7-01b838d8e792" width="180"/> <img src="https://github.com/user-attachments/assets/a70b3493-5f67-4bc5-840c-6be0e1496e22" width="180"/> <img src="https://github.com/user-attachments/assets/049e5e4c-22c0-4306-ab49-b431ee2c4840" width="180"/> <img src="https://github.com/user-attachments/assets/04269656-01a4-4c58-8c4c-68b6a3ff70b2" width="180"/> <img src="https://github.com/user-attachments/assets/bca1434b-dbd9-43ac-89e9-3f24321ea1ab" width="180"/> <img src="https://github.com/user-attachments/assets/78dd9abb-5957-4ed7-bc06-e77956909049" width="180"/> <img src="https://github.com/user-attachments/assets/d9885e0a-0f58-4db0-b4b3-056c134d2e01" width="180"/> <img src="https://github.com/user-attachments/assets/b24f58cf-683e-4f08-8d0a-4c237238df7f" width="180"/> <img src="https://github.com/user-attachments/assets/ff7255bc-04bc-43be-b5ad-48ce50cd134d" width="180"/> <img src="https://github.com/user-attachments/assets/211d0dea-9f7c-4f27-8680-d53d9eb207f9" width="180"/> <img src="https://github.com/user-attachments/assets/db961e3c-fd07-4696-a1f0-6a5bd299943b" width="180"/> <img src="https://github.com/user-attachments/assets/1edba6de-d48a-4489-94c3-38498527ce83" width="180"/> <img src="https://github.com/user-attachments/assets/6ab30443-fabd-4083-8f3e-96575998bbbf" width="180"/> <img src="https://github.com/user-attachments/assets/9d9c9c37-0bbe-4c4b-a667-ec51f8389df9" width="180"/> <img src="https://github.com/user-attachments/assets/7304e87e-fc74-43bd-87bf-2e7e56ae56f3" width="180"/> </div>
+
+
+
+---
+
+## 🌟 Key Features
+
+### 🔄 Sync Engine
+- WorkManager-based background sync
+- Battery & network aware
+- Folder-level control
+
+---
+
+### 📤 Manual Uploads
+- Select 100+ files
+- Runs in foreground service
+- Works with screen off
 
 ---
 
 ### 🌐 Smart Networking
-- ✅ **Dual-URL Architecture**
-    - Local IP (fast home network)
-    - Cloudflare Tunnel (remote access)
-
-- ✅ **Stateless Interceptors**
-  Injects JWT tokens and device IDs into every request via OkHttp.
-
-- ✅ **Auto-Logout Security**
-  Handles `401 Unauthorized` responses by clearing session and redirecting to login.
+- Dual URL (Local + Remote)
+- Local prioritization
+- Auto fallback
 
 ---
 
-### 👨‍👩‍👧 Private Family Network
-- ✅ **My Network**
-  Manage follow requests between users.
-
-- ✅ **Albums & Sharing**
-  Share albums with approved connections.
-
-- ✅ **One-Tap Import**
-  Clone shared albums into personal storage.
+### 📶 Connection Intelligence
+- Live connection testing
+- Server version detection
+- Network indicator (WiFi / Cloud)
 
 ---
 
-### 🎨 Modern UI/UX
-- ✅ **Jetpack Compose UI**
-- ✅ **Dynamic Grid Layouts**
-- ✅ **Full-Screen Photo Viewer**
-- ✅ **Native Sharing & Open-With Support**
+### 🎨 UI/UX
+- Jetpack Compose UI
+- Smooth animations
+- Dynamic grids
+- Fullscreen viewer
+
+---
+
+### 🎥 Media Experience
+- Native video playback
+- Swipe navigation
+- Smart zoom (pinch / double tap)
+
+---
+
+### ⚡ Performance
+- 100MB disk cache
+- Zero redundant downloads
+- Optimized memory usage
 
 ---
 
@@ -63,10 +132,9 @@ Built using **Modern Android Development (MAD)** principles, it leverages Jetpac
 | Language | Kotlin |
 | UI | Jetpack Compose |
 | Networking | Retrofit + OkHttp |
-| Image Loading | Coil |
-| Background Tasks | WorkManager |
+| Image | Coil |
+| Background | WorkManager |
 | Storage | EncryptedSharedPreferences |
-| Navigation | Compose Navigation |
 
 ---
 
@@ -76,90 +144,40 @@ Built using **Modern Android Development (MAD)** principles, it leverages Jetpac
 app/src/main/java/com/sagar/prosync/
 ├─ auth/
 ├─ data/
-│  ├─ api/
-│  ├─ ApiClient.kt
-│  ├─ SessionStore.kt
-│  └─ SettingsStore.kt
 ├─ device/
 ├─ navigation/
 ├─ sync/
-│  ├─ SyncWorker.kt
-│  └─ FolderPicker.kt
 ├─ ui/
-│  ├─ HomeScreen.kt
-│  ├─ AlbumScreens.kt
-│  ├─ NetworkScreen.kt
-│  └─ SettingsScreen.kt
 └─ MainActivity.kt
 ```
 
 ---
 
-## 🚀 Setup & Installation
+## 🔐 Security
 
-### 1️⃣ Requirements
-- Android Studio (Latest Stable)
-- Minimum SDK: API 26
-- Target SDK: API 34
-
----
-
-### 2️⃣ Clone Project
-```bash
-git clone <android-repo-url>
-```
-
-Open in Android Studio and sync Gradle.
+- JWT authentication
+- Secure storage
+- Auto logout on invalid session
 
 ---
 
-### 3️⃣ First-Time Setup (Server Config)
+## 🎯 Why PhotoSync?
 
-On first launch:
-
-1. Enter Remote Server URL  
-   Example:
-   ```
-   https://photos.yourdomain.com/
-   ```
-
-2. (Optional) Enable Local Server  
-   Example:
-   ```
-   http://192.168.0.181:8000/
-   ```
-
-3. Continue to login
-
----
-
-### 4️⃣ Permissions Required
-
-- READ_MEDIA_IMAGES / READ_MEDIA_VIDEO (Android 13+)
-- READ_EXTERNAL_STORAGE (Below Android 13)
-- POST_NOTIFICATIONS
-
----
-
-## 🗺 Roadmap
-
-### ✅ Release 1.0
-- Full backup system
-- Dual-URL networking
-- Private sharing system
-
-### 🔜 Release 1.5
-- Web application (React/Vue)
-- Desktop-style gallery management
+| Feature            | PhotoSync | Google Photos |
+|------------------|----------|--------------|
+| Self-hosted       | ✅       | ❌           |
+| Privacy           | ✅       | ❌           |
+| Local speed       | ✅       | ❌           |
+| No subscription   | ✅       | ❌           |
 
 ---
 
 ## 👨‍💻 Author
 
-**Sagar Makhija**
+Sagar Makhija
 
 ---
 
 ## 📜 License
 
-Private / Internal Use (Update as needed)
+Private / Internal Use
