@@ -4,9 +4,14 @@ import android.util.Log
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import retrofit2.http.Body
+import retrofit2.http.DELETE
+import retrofit2.http.GET
 import retrofit2.http.Multipart
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Part
+import retrofit2.http.Path
+import retrofit2.http.Query
 
 data class PhotoCheckItem(
     val sha256: String,
@@ -79,7 +84,7 @@ interface PhotoApi {
 
     @POST("/photos/check")
     suspend fun check(
-        @retrofit2.http.Body body: PhotoCheckRequest
+        @Body body: PhotoCheckRequest
     ): PhotoCheckResponse
 
     @Multipart
@@ -91,88 +96,97 @@ interface PhotoApi {
         @Part("media_type") mediaType: RequestBody
     ): UploadResponse
 
-    @retrofit2.http.GET("/photos/list")
+    @GET("/photos/list")
     suspend fun getPhotos(): PhotoListResponse
 
-    @retrofit2.http.POST("/photos/delete-batch")
-    suspend fun deletePhotos(@retrofit2.http.Body request: DeletePhotosRequest)
+    @POST("/photos/delete-batch")
+    suspend fun deletePhotos(@Body request: DeletePhotosRequest)
 
-    @retrofit2.http.GET("/albums/")
+    @GET("/albums/")
     suspend fun getAlbums(): AlbumsResponse
 
-    @retrofit2.http.POST("/albums/create")
-    suspend fun createAlbum(@retrofit2.http.Body request: CreateAlbumRequest): CreateAlbumResponse
+    @POST("/albums/create")
+    suspend fun createAlbum(@Body request: CreateAlbumRequest): CreateAlbumResponse
 
-    @retrofit2.http.POST("/albums/{album_id}/add-photos")
+    @POST("/albums/{album_id}/add-photos")
     suspend fun addPhotosToAlbum(
-        @retrofit2.http.Path("album_id") albumId: Int,
-        @retrofit2.http.Body request: AddPhotosRequest
+        @Path("album_id") albumId: Int,
+        @Body request: AddPhotosRequest
     )
 
-    @retrofit2.http.GET("/albums/{album_id}")
-    suspend fun getAlbumDetails(@retrofit2.http.Path("album_id") albumId: Int): AlbumDetailResponse
+    @GET("/albums/{album_id}")
+    suspend fun getAlbumDetails(@Path("album_id") albumId: Int): AlbumDetailResponse
 
-    @retrofit2.http.POST("/albums/{album_id}/share")
+    @POST("/albums/{album_id}/share")
     suspend fun shareAlbum(
-        @retrofit2.http.Path("album_id") albumId: Int,
-        @retrofit2.http.Body request: ShareAlbumRequest
+        @Path("album_id") albumId: Int,
+        @Body request: ShareAlbumRequest
     ): ShareAlbumResponse
 
-    @retrofit2.http.POST("/albums/import-photo")
+    @POST("/albums/import-photo")
     suspend fun importSharedPhoto(
-        @retrofit2.http.Body request: ImportPhotoRequest
+        @Body request: ImportPhotoRequest
     ): ImportPhotoResponse
 
-    @retrofit2.http.POST("/albums/{album_id}/import-all")
-    suspend fun importEntireAlbum(@retrofit2.http.Path("album_id") albumId: Int): Map<String, Any>
+    @POST("/albums/{album_id}/import-all")
+    suspend fun importEntireAlbum(@Path("album_id") albumId: Int): Map<String, Any>
 
-    @retrofit2.http.GET("/albums/available-users")
-    suspend fun searchUsers(@retrofit2.http.Query("q") query: String): List<UserDto>
+    @GET("/albums/available-users")
+    suspend fun searchUsers(@Query("q") query: String): List<UserDto>
 
-    @retrofit2.http.PUT("/albums/{album_id}/rename")
+    @PUT("/albums/{album_id}/rename")
     suspend fun renameAlbum(
-        @retrofit2.http.Path("album_id") albumId: Int,
-        @retrofit2.http.Body request: RenameAlbumRequest
+        @Path("album_id") albumId: Int,
+        @Body request: RenameAlbumRequest
     ): RenameAlbumResponse
 
-    @retrofit2.http.DELETE("/albums/{album_id}")
+    @DELETE("/albums/{album_id}")
     suspend fun deleteAlbum(
-        @retrofit2.http.Path("album_id") albumId: Int,
-        @retrofit2.http.Query("delete_files") deleteFiles: Boolean
+        @Path("album_id") albumId: Int,
+        @Query("delete_files") deleteFiles: Boolean
     ): GenericMessageResponse
 
-    @retrofit2.http.GET("/albums/{album_id}/shares")
-    suspend fun getAlbumShares(@retrofit2.http.Path("album_id") albumId: Int): List<UserDto>
+    @GET("/albums/{album_id}/shares")
+    suspend fun getAlbumShares(@Path("album_id") albumId: Int): List<UserDto>
 
-    @retrofit2.http.DELETE("/albums/{album_id}/share/{target_user_id}")
+    @DELETE("/albums/{album_id}/share/{target_user_id}")
     suspend fun unshareAlbum(
-        @retrofit2.http.Path("album_id") albumId: Int,
-        @retrofit2.http.Path("target_user_id") targetUserId: Int
+        @Path("album_id") albumId: Int,
+        @Path("target_user_id") targetUserId: Int
     ): GenericMessageResponse
 
-    @retrofit2.http.POST("/albums/{album_id}/remove-photos")
+    @POST("/albums/{album_id}/remove-photos")
     suspend fun removePhotosFromAlbum(
-        @retrofit2.http.Path("album_id") albumId: Int,
-        @retrofit2.http.Body request: RemovePhotosRequest
+        @Path("album_id") albumId: Int,
+        @Body request: RemovePhotosRequest
     ): GenericMessageResponse
 
     // --- NETWORK & FOLLOW SYSTEM ---
-    @retrofit2.http.POST("/network/follow/{target_username}")
-    suspend fun sendFollowRequest(@retrofit2.http.Path("target_username") targetUsername: String): FollowResponse
+    @POST("/network/follow/{target_username}")
+    suspend fun sendFollowRequest(@Path("target_username") targetUsername: String): FollowResponse
 
-    @retrofit2.http.GET("/network/requests/pending")
+    @GET("/network/requests/pending")
     suspend fun getPendingRequests(): List<PendingRequestDto>
 
-    @retrofit2.http.POST("/network/requests/{request_id}/{action}")
+    @POST("/network/requests/{request_id}/{action}")
     suspend fun resolveFollowRequest(
-        @retrofit2.http.Path("request_id") requestId: Int,
-        @retrofit2.http.Path("action") action: String // "accept" or "reject"
+        @Path("request_id") requestId: Int,
+        @Path("action") action: String // "accept" or "reject"
     ): FollowResponse
 
-    @retrofit2.http.GET("/network/connections")
+    @GET("/network/connections")
     suspend fun getConnections(): List<ConnectionDto>
 
     // --- ADMIN ENDPOINTS ---
-    @retrofit2.http.POST("/photos/admin/backfill-gifs")
+    @POST("/photos/admin/backfill-gifs")
     suspend fun triggerGifBackfill(): GenericMessageResponse
+
+    @GET("/network/requests/sent")
+    suspend fun getSentRequests(): List<PendingRequestDto>
+
+    @DELETE("/network/requests/{request_id}/cancel")
+    suspend fun cancelSentRequest(@Path("request_id") requestId: Int): GenericMessageResponse
+
+    @DELETE("/network/connections/{target_user_id}")
+    suspend fun removeConnection(@Path("target_user_id") targetUserId: Int): GenericMessageResponse
 }

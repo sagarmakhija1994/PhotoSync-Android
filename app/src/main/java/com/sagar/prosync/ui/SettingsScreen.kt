@@ -28,7 +28,12 @@ import com.sagar.prosync.data.api.PhotoApi
 import com.sagar.prosync.sync.FolderPicker
 import com.sagar.prosync.sync.FolderStore
 import com.sagar.prosync.sync.SyncWorker
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -50,9 +55,20 @@ fun SettingsScreen(
     var useCellular by remember { mutableStateOf(settingsStore.useCellular) }
     var autoSyncEnabled by remember { mutableStateOf(settingsStore.autoSyncEnabled) }
 
-    // New Grid States
+    // Grid States
     var columnsPortrait by remember { mutableIntStateOf(settingsStore.gridColumnsPortrait) }
     var columnsLandscape by remember { mutableIntStateOf(settingsStore.gridColumnsLandscape) }
+
+    // Server Connection States
+    var mainServerUrl by remember { mutableStateOf(settingsStore.serverUrl) }
+    var localServerUrl by remember { mutableStateOf(settingsStore.localServerUrl) }
+    var useLocalServer by remember { mutableStateOf(settingsStore.useLocalServer) }
+    var isTestingConnection by remember { mutableStateOf(false) }
+    var testConnectionResult by remember { mutableStateOf<String?>(null) }
+    var testConnectionSuccess by remember { mutableStateOf(false) }
+
+    // 💥 NEW: Bottom Version State
+    var serverVersion by remember { mutableStateOf("Connecting...") }
 
     var selectedFolders by remember { mutableStateOf(folderStore.getAll().toList()) }
     var isBackfilling by remember { mutableStateOf(false) }
@@ -62,6 +78,36 @@ fun SettingsScreen(
         FolderPicker.persistPermission(context, uri)
         folderStore.save(uri)
         selectedFolders = folderStore.getAll().toList()
+    }
+
+    // 💥 NEW: Silently fetch the version when the screen opens
+    LaunchedEffect(Unit) {
+        val urlToTest = if (useLocalServer && localServerUrl.isNotBlank()) localServerUrl else mainServerUrl
+        if (urlToTest.isNotBlank()) {
+            withContext(Dispatchers.IO) {
+                try {
+                    val client = OkHttpClient.Builder()
+                        .connectTimeout(3, TimeUnit.SECONDS)
+                        .readTimeout(3, TimeUnit.SECONDS)
+                        .build()
+                    val request = Request.Builder()
+                        .url(urlToTest.trimEnd('/') + "/server-info")
+                        .build()
+                    client.newCall(request).execute().use { response ->
+                        if (response.isSuccessful) {
+                            val json = JSONObject(response.body?.string() ?: "")
+                            serverVersion = "v" + json.optString("version", "Unknown")
+                        } else {
+                            serverVersion = "Offline"
+                        }
+                    }
+                } catch (e: Exception) {
+                    serverVersion = "Offline"
+                }
+            }
+        } else {
+            serverVersion = "Not Configured"
+        }
     }
 
     val toggleAutoSync = { enabled: Boolean ->
@@ -82,6 +128,58 @@ fun SettingsScreen(
         }
     }
 
+    val testServerConnection = {
+        coroutineScope.launch {
+            isTestingConnection = true
+            testConnectionResult = null
+
+            // Determine which URL to test based on toggle
+            val urlToTest = if (useLocalServer && localServerUrl.isNotBlank()) localServerUrl else mainServerUrl
+
+            if (urlToTest.isBlank()) {
+                testConnectionSuccess = false
+                testConnectionResult = "URL cannot be empty."
+                serverVersion = "Not Configured"
+                isTestingConnection = false
+                return@launch
+            }
+
+            try {
+                withContext(Dispatchers.IO) {
+                    val client = OkHttpClient.Builder()
+                        .connectTimeout(3, TimeUnit.SECONDS)
+                        .readTimeout(3, TimeUnit.SECONDS)
+                        .build()
+
+                    val request = Request.Builder()
+                        .url(urlToTest.trimEnd('/') + "/server-info")
+                        .build()
+
+                    client.newCall(request).execute().use { response ->
+                        if (response.isSuccessful) {
+                            val responseBody = response.body?.string() ?: ""
+                            val json = JSONObject(responseBody)
+                            val version = json.optString("version", "Unknown")
+                            testConnectionSuccess = true
+                            testConnectionResult = "Success! Connected to PhotoSync v$version"
+                            serverVersion = "v$version" // Update the bottom text too!
+                        } else {
+                            testConnectionSuccess = false
+                            testConnectionResult = "Failed: Server responded with HTTP ${response.code}"
+                            serverVersion = "Offline"
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                testConnectionSuccess = false
+                testConnectionResult = "Failed: Could not reach server. Check IP and Port."
+                serverVersion = "Offline"
+            } finally {
+                isTestingConnection = false
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -96,12 +194,14 @@ fun SettingsScreen(
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize().padding(16.dp)) {
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Backup Folders", style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = { FolderPicker.launch(launcher) }) { Text("+ Add") }
-            }
-
             LazyColumn(modifier = Modifier.weight(1f)) {
+                item {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Backup Folders", style = MaterialTheme.typography.titleMedium)
+                        TextButton(onClick = { FolderPicker.launch(launcher) }) { Text("+ Add") }
+                    }
+                }
+
                 items(selectedFolders) { uriString ->
                     val uri = Uri.parse(uriString)
                     val displayName = uri.lastPathSegment?.substringAfterLast(":") ?: "Unknown Folder"
@@ -119,7 +219,7 @@ fun SettingsScreen(
                 }
 
                 item {
-                    // --- NEW: UI PREFERENCES ---
+                    // --- UI PREFERENCES ---
                     HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
                     Text("UI Preferences", style = MaterialTheme.typography.titleMedium)
 
@@ -174,46 +274,63 @@ fun SettingsScreen(
                         Column { Text("Daily Auto-Sync"); Text("Syncs in the background", style = MaterialTheme.typography.bodySmall) }
                         Switch(checked = autoSyncEnabled, onCheckedChange = { toggleAutoSync(it) }, colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary))
                     }
-                }
-            }
 
-            // --- 2. ADMIN SECTION (Easy to comment out before building the final APK) ---
+                    // --- SERVER CONNECTION ---
+                    // --- SERVER CONNECTION ---
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+                    Text("Server Connection", style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.height(8.dp))
 
-            Text(
-                text = "Admin Tools",
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
-            )
+                    OutlinedTextField(
+                        value = mainServerUrl,
+                        onValueChange = { mainServerUrl = it; settingsStore.serverUrl = it; testConnectionResult = null },
+                        label = { Text("Main Server URL (e.g., https://...)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-            Button(
-                onClick = {
-                    coroutineScope.launch {
-                        isBackfilling = true
-                        try {
-                            val response = api.triggerGifBackfill()
-                            Toast.makeText(context, response.message, Toast.LENGTH_LONG).show()
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Backfill Failed: ${e.message}", Toast.LENGTH_LONG).show()
-                        } finally {
-                            isBackfilling = false
+                    // Moved the toggle ABOVE the local URL input for better UX
+                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Prioritize Local Network")
+                            Text("Fast Wi-Fi sync when at home", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(checked = useLocalServer, onCheckedChange = { useLocalServer = it; settingsStore.useLocalServer = it; testConnectionResult = null })
+                    }
+
+                    // 💥 NEW: Only show the Local URL input if the toggle is ON
+                    if (useLocalServer) {
+                        OutlinedTextField(
+                            value = localServerUrl,
+                            onValueChange = { localServerUrl = it; settingsStore.localServerUrl = it; testConnectionResult = null },
+                            label = { Text("Local Server URL (e.g., http://192...:8000)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                        )
+                    }
+
+                    Button(
+                        onClick = { testServerConnection() },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isTestingConnection
+                    ) {
+                        if (isTestingConnection) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        } else {
+                            Text("Test Connection")
                         }
                     }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                    contentColor = MaterialTheme.colorScheme.onErrorContainer
-                )
-            ) {
-                if (isBackfilling) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onErrorContainer)
-                } else {
-                    Text("Trigger GIF Backfill (Server)")
+
+                    if (testConnectionResult != null) {
+                        Text(
+                            text = testConnectionResult!!,
+                            color = if (testConnectionSuccess) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+                        )
+                    }
                 }
             }
-
-            // ----------------------------------------------------------------------------
 
             Button(
                 onClick = {
@@ -225,6 +342,14 @@ fun SettingsScreen(
             ) {
                 Text("Log Out")
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Running PhotoSync $serverVersion",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (serverVersion == "Offline" || serverVersion == "Not Configured") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
         }
     }
 }
