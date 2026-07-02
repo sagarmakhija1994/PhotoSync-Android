@@ -74,7 +74,7 @@ fun SharedAlbumDetailScreen(
     val coroutineScope = rememberCoroutineScope()
     val sessionStore = remember { SessionStore(context) }
     val api = remember { ApiClient.create(context).create(PhotoApi::class.java) }
-    val token = sessionStore.getToken() ?: ""
+    val token = sessionStore.getAccessToken() ?: ""
 
     var albumDetails by remember { mutableStateOf<AlbumDetailResponse?>(null) }
     var isLoading by remember { mutableStateOf(true) }

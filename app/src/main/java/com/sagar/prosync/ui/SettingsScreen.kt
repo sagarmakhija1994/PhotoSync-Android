@@ -49,6 +49,7 @@ fun SettingsScreen(
     val folderStore = remember { FolderStore(context) }
     val workManager = WorkManager.getInstance(context)
     val api = remember { ApiClient.create(context).create(PhotoApi::class.java) }
+    val authRepo = remember { com.sagar.prosync.data.AuthRepository(context) }
 
     var syncPhotos by remember { mutableStateOf(settingsStore.syncPhotos) }
     var syncVideos by remember { mutableStateOf(settingsStore.syncVideos) }
@@ -334,8 +335,10 @@ fun SettingsScreen(
 
             Button(
                 onClick = {
-                    sessionStore.clear()
-                    onLogout()
+                    coroutineScope.launch {
+                        authRepo.logout()
+                        onLogout()
+                    }
                 },
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)

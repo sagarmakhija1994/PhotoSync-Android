@@ -6,6 +6,12 @@ import android.net.NetworkCapabilities
 import com.sagar.prosync.device.DeviceManager
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
+import okhttp3.Authenticator
+import okhttp3.Request
+import okhttp3.RequestBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -26,8 +32,8 @@ object ApiClient {
 
             val builder = chain.request().newBuilder()
 
-            // ✅ THIS IS MANDATORY
-            session.getToken()?.let { token ->
+            // ✅ THIS IS MANDATORY (use access token)
+            session.getAccessToken()?.let { token ->
                 builder.addHeader("Authorization", "Bearer $token")
             }
 
@@ -94,9 +100,50 @@ object ApiClient {
             chain.proceed(request)
         }
 
+        // Authenticator that attempts to refresh the access token using the refresh token
+        val tokenAuthenticator = Authenticator { route, response ->
+            val session = SessionStore(context)
+            val refreshToken = session.getRefreshToken() ?: return@Authenticator null
+
+            synchronized(this) {
+                // Build a minimal client without the authInterceptor to avoid recursion
+                val refreshClient = OkHttpClient.Builder()
+                    .addInterceptor(dynamicHostInterceptor)
+                    .addInterceptor(logging)
+                    .build()
+
+                val settingsStore = SettingsStore(context)
+                val base = settingsStore.serverUrl.ifBlank { "http://127.0.0.1:8000" }
+                val url = if (base.endsWith("/")) base + "auth/refresh" else base + "/auth/refresh"
+                val mediaType = "application/json; charset=utf-8".toMediaType()
+                val body = JSONObject().put("refresh_token", refreshToken).toString().toRequestBody(mediaType)
+
+                val req = Request.Builder().url(url).post(body).build()
+                val resp = try { refreshClient.newCall(req).execute() } catch (e: Exception) { null }
+                if (resp == null || !resp.isSuccessful) {
+                    session.clear()
+                    return@Authenticator null
+                }
+
+                val bodyStr = resp.body?.string() ?: return@Authenticator null
+                val json = JSONObject(bodyStr)
+                val newAccess = json.optString("access_token", null) ?: return@Authenticator null
+                val newRefresh = json.optString("refresh_token", null)
+
+                session.saveAccessToken(newAccess)
+                if (newRefresh != null) session.saveRefreshToken(newRefresh)
+
+                // Retry the original request with new access token
+                return@Authenticator response.request.newBuilder()
+                    .header("Authorization", "Bearer $newAccess")
+                    .build()
+            }
+        }
+
         val client = OkHttpClient.Builder()
             .addInterceptor(dynamicHostInterceptor) // MUST run before auth/logging so URL is set first
             .addInterceptor(authInterceptor)
+            .authenticator(tokenAuthenticator)
             .addInterceptor(logging)
             .build()
 

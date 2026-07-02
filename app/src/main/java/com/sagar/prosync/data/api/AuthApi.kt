@@ -5,10 +5,14 @@ import retrofit2.http.POST
 import retrofit2.http.Query
 
 data class LoginRequest(val username: String, val password: String, val device_id: String, val device_name: String)
-data class LoginResponse(val access_token: String, val token_type: String)
+data class LoginResponse(val access_token: String, val refresh_token: String, val token_type: String)
 
 data class RegisterRequest(val username: String, val email: String, val password: String, val device_name: String)
 data class RegisterResponse(val message: String)
+
+data class LogoutRequest(val refresh_token: String)
+data class RefreshRequest(val refresh_token: String)
+data class RefreshResponse(val access_token: String, val refresh_token: String, val token_type: String)
 
 interface AuthApi {
     @POST("/auth/login")
@@ -32,4 +36,10 @@ interface AuthApi {
         @Query("password") password: String,
         @Query("device_name") deviceName: String
     ): RegisterResponse
+
+    @POST("/auth/logout")
+    suspend fun logout(@Body body: LogoutRequest)
+
+    @POST("/auth/refresh")
+    suspend fun refresh(@Body body: RefreshRequest): RefreshResponse
 }
