@@ -20,7 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.work.*
+import androidx.activity.compose.BackHandler
 import com.sagar.prosync.data.ApiClient
 import com.sagar.prosync.data.SessionStore
 import com.sagar.prosync.data.SettingsStore
@@ -43,6 +43,7 @@ fun SettingsScreen(
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
+    BackHandler { onNavigateBack() }
     val coroutineScope = rememberCoroutineScope()
     val settingsStore = remember { SettingsStore(context) }
     val sessionStore = remember { SessionStore(context) }
