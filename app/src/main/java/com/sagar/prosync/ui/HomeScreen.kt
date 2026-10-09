@@ -383,7 +383,7 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
                         ) {
                             items(photos) { photo ->
                                 val isSelected = selectedPhotoIds.contains(photo.id)
-                                val token = sessionStore.getToken() ?: ""
+                                val token = sessionStore.getAccessToken() ?: ""
 
                                 val imageRequest = remember(photo.id, activeBaseUrl, token) {
                                     ImageRequest.Builder(context)
@@ -510,13 +510,13 @@ fun HomeScreen(onNavigateToSettings: () -> Unit, onLogout: () -> Unit) {
 
     // --- OVERLAYS ---
     viewingPhotoIndex?.let { initialIndex ->
-        PhotoViewerScreen(
-            photos = photos,
-            initialIndex = initialIndex,
-            activeBaseUrl = activeBaseUrl,
-            token = sessionStore.getToken() ?: "",
-            onClose = { viewingPhotoIndex = null }
-        )
+            PhotoViewerScreen(
+                photos = photos,
+                initialIndex = initialIndex,
+                activeBaseUrl = activeBaseUrl,
+                token = sessionStore.getAccessToken() ?: "",
+                onClose = { viewingPhotoIndex = null }
+            )
     }
 
     viewingAlbumId?.let { albumId ->

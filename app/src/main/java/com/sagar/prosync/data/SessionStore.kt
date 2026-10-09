@@ -19,13 +19,25 @@ class SessionStore(context: Context) {
     )
 
     fun saveToken(token: String) {
-        prefs.edit().putString("jwt", token).apply()
+        // Backwards-compatible: saving single token still sets access token
+        prefs.edit().putString("access_token", token).apply()
     }
 
-    fun getToken(): String? = prefs.getString("jwt", null)
+    fun saveAccessToken(token: String) {
+        prefs.edit().putString("access_token", token).apply()
+    }
+
+    fun getAccessToken(): String? = prefs.getString("access_token", null)
+
+    fun saveRefreshToken(token: String) {
+        prefs.edit().putString("refresh_token", token).apply()
+    }
+
+    fun getRefreshToken(): String? = prefs.getString("refresh_token", null)
 
     fun clear() {
-        prefs.edit().remove("jwt").apply()
+        prefs.edit().remove("access_token").apply()
+        prefs.edit().remove("refresh_token").apply()
         prefs.edit().clear().apply()
     }
 }
