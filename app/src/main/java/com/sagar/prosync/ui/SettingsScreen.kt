@@ -20,7 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.work.*
+import androidx.activity.compose.BackHandler
 import com.sagar.prosync.data.ApiClient
 import com.sagar.prosync.data.SessionStore
 import com.sagar.prosync.data.SettingsStore
@@ -43,12 +43,14 @@ fun SettingsScreen(
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
+    BackHandler { onNavigateBack() }
     val coroutineScope = rememberCoroutineScope()
     val settingsStore = remember { SettingsStore(context) }
     val sessionStore = remember { SessionStore(context) }
     val folderStore = remember { FolderStore(context) }
     val workManager = WorkManager.getInstance(context)
     val api = remember { ApiClient.create(context).create(PhotoApi::class.java) }
+    val authRepo = remember { com.sagar.prosync.data.AuthRepository(context) }
 
     var syncPhotos by remember { mutableStateOf(settingsStore.syncPhotos) }
     var syncVideos by remember { mutableStateOf(settingsStore.syncVideos) }
@@ -334,8 +336,10 @@ fun SettingsScreen(
 
             Button(
                 onClick = {
-                    sessionStore.clear()
-                    onLogout()
+                    coroutineScope.launch {
+                        authRepo.logout()
+                        onLogout()
+                    }
                 },
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)

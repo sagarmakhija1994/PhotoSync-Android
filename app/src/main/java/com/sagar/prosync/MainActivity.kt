@@ -38,7 +38,7 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf(
                         when {
                             settingsStore.serverUrl.isBlank() -> "SERVER_CONFIG"
-                            sessionStore.getToken().isNullOrEmpty() -> "LOGIN"
+                            sessionStore.getAccessToken().isNullOrEmpty() -> "LOGIN"
                             !settingsStore.isSetupComplete -> "SETUP"
                             else -> "HOME"
                         }

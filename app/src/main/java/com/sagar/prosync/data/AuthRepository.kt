@@ -21,11 +21,25 @@ class AuthRepository(private val context: Context) {
     private val api = ApiClient.create(context).create(AuthApi::class.java)
     private val sessionStore = SessionStore(context)
 
+    suspend fun logout(): AuthResult = withContext(Dispatchers.IO) {
+        try {
+            val refresh = sessionStore.getRefreshToken() ?: return@withContext AuthResult.Success
+            api.logout(com.sagar.prosync.data.api.LogoutRequest(refresh))
+        } catch (e: Exception) {
+            // Ignore network errors during logout, still clear local session
+        } finally {
+            sessionStore.clear()
+        }
+        AuthResult.Success
+    }
+
     suspend fun login(username: String, password: String): AuthResult = withContext(Dispatchers.IO) {
         try {
             // Include device info to prevent 422 errors
             val response = api.login(username, password, DeviceManager.getOrCreateDeviceId(context), DeviceManager.getDeviceName())
-            sessionStore.saveToken(response.access_token)
+            // Persist both access and refresh tokens
+            sessionStore.saveAccessToken(response.access_token)
+            sessionStore.saveRefreshToken(response.refresh_token)
             AuthResult.Success
         } catch (e: HttpException) {
             when (e.code()) {
